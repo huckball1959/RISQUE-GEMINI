@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+  <!-- Cross-document view transitions break on file:// (each path is an opaque origin); Chromium then logs "Unsafe attempt to load URL ... from frame". -->
+  <meta name="view-transition" content="same-origin" id="risque-view-transition-meta" />
+  <script>
+    (function () {
+      try {
+        if (location.protocol === "file:") {
+          document.documentElement.classList.add("risque-file-origin");
+          var m = document.getElementById("risque-view-transition-meta");
+          if (m && m.parentNode) m.parentNode.removeChild(m);
+        }
+      } catch (e) { /* ignore */ }
+    })();
+  </script>
+  <title>RISQUE Runtime</title>
+  <script>
+    (function () {
+      try {
+        /* file://: some builds expose an empty location.search while href still has ?display=public — use URL(href). */
+        var q = new URL(window.location.href).searchParams;
+        var disp = String(q.get("display") || "").toLowerCase();
+        window.risqueDisplayIsPublic = disp === "public";
+        window.risqueDisplayMode = window.risqueDisplayIsPublic ? "public" : "host";
+      } catch (e) {
+        window.risqueDisplayIsPublic = false;
+        window.risqueDisplayMode = "host";
+      }
+    })();
+  </script>
+  <!-- Black root only; phase changes use cross-document view transitions (Chromium) for cross-dissolve -->
+  <style>
+    html {
+      background-color: #000;
+    }
+  </style>
+  <link rel="stylesheet" href="game.css?v=corner-map-1080-auto-chip-2026-05-02" />
+  <script>
+    (function () {
+      try {
+        /* file://: keep navigation:none — cross-doc view transitions break on opaque origins. */
+        if (location.protocol === "file:") {
+          var st = document.createElement("style");
+          st.setAttribute("data-risque-vt-file-disable", "1");
+          st.textContent = "@view-transition { navigation: none !important; }";
+          document.head.appendChild(st);
+        }
+      } catch (e) {
+        /* ignore */
+      }
+    })();
+  </script>
+  <!--
+    http(s): game.css uses @view-transition { navigation: auto } so Chromium holds a snapshot of the
+    outgoing page (map + HUD) until the incoming game.html paints — avoids empty map/panel mid-load.
+    Privacy/setup flows on file:// match the no-VT behavior via the script above + meta removal.
+  -->
+  <style>
+    body.runtime-page.pre-fullstage .topbar,
+    body.runtime-page.pre-fullstage .runtime-panel {
+      display: none !important;
+    }
+    body.runtime-page {
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+      font-family: Arial, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+    }
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border-bottom: 1px solid #334155;
+      background: #111827;
+      flex-shrink: 0;
+      z-index: 10;
+    }
+    .topbar-title {
+      font-weight: 700;
+    }
+    .topbar-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .topbar button {
+      border: 0;
+      border-radius: 8px;
+      padding: 8px 10px;
+      cursor: pointer;
+      font-weight: 700;
+      background: #334155;
+      color: #e2e8f0;
+    }
+    .runtime-shell {
+      flex: 1;
+      display: flex;
+      min-height: 0;
+      min-width: 0;
+    }
+    .runtime-panel {
+      width: min(360px, 42vw);
+      flex-shrink: 0;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 12px;
+      background: #111827;
+      border-right: 1px solid #334155;
+    }
+    .panel-card {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 14px;
+      margin-bottom: 12px;
+    }
+    .phase {
+      font-size: 17px;
+      margin-bottom: 10px;
+      font-weight: 700;
+    }
+    .viz-box {
+      font-size: 11px;
+      background: #0b1220;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 10px;
+      margin-bottom: 12px;
+      color: #cbd5e1;
+    }
+    .viz-box pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .muted {
+      color: #94a3b8;
+    }
+    code {
+      background: #0b1220;
+      border-radius: 4px;
+      padding: 1px 4px;
+    }
+    .runtime-stage-host {
+      flex: 1;
+      min-width: 0;
+      position: relative;
+      background: #000;
+      overflow: hidden;
+    }
+    #app button {
+      border: 0;
+      border-radius: 8px;
+      padding: 8px 10px;
+      cursor: pointer;
+      font-weight: 700;
+      background: #334155;
+      color: #e2e8f0;
+      font-size: 12px;
+    }
+    /* Setup phases (JS player select + deal): full-bleed board like legacy HTML pages */
+    body.risque-setup-fullstage .topbar,
+    body.risque-setup-fullstage .runtime-panel {
+      display: none !important;
+    }
+    body.risque-setup-fullstage .runtime-shell {
+      flex: 1;
+      min-height: 0;
+    }
+    body.risque-setup-fullstage .runtime-stage-host {
+      flex: 1;
+      min-width: 0;
+      min-height: 0;
+    }
+    /* Legacy harness chrome removed globally. */
+    .topbar,
+    .runtime-panel {
+      display: none !important;
+    }
+  </style>
+  <script>
+    (function () {
+      try {
+        var q = new URL(window.location.href).searchParams;
+        var p = q.get("phase");
+        /* Match html root: avoid slate flash before login UI paints */
+        if (p === "login") {
+          var boot = document.createElement("style");
+          boot.textContent = "body.runtime-page { background: #000 !important; }";
+          document.head.appendChild(boot);
+        }
+        var full = [
+          "playerSelect",
+          "deal",
+          "deploy",
+          "deploy1",
+          "deploy2",
+          "attack",
+          "reinforce",
+          "receivecard",
+          "postgame",
+          "con-income",
+          "conquer",
+          "privacyGate"
+        ];
+        if (p && full.indexOf(p) !== -1) {
+          document.addEventListener("DOMContentLoaded", function () {
+            document.body.classList.add("pre-fullstage");
+          });
+        }
+      } catch (e) {
+        /* ignore */
+      }
+    })();
+  </script>
+</head>
+<body class="runtime-page">
+  <script>
+    (function () {
+      var pub = !!window.risqueDisplayIsPublic;
+      document.documentElement.classList.add(pub ? "risque-view-public" : "risque-view-host");
+      document.body.classList.add(pub ? "risque-view-public" : "risque-view-host");
+    })();
+  </script>
+  <script>
+    (function () {
+      try {
+        if (window.risqueDisplayIsPublic) return;
+        var q = new URL(window.location.href).searchParams;
+        if (q.get("postReceive") !== "1") return;
+        if (sessionStorage.getItem("risquePostReceiveCardplayBlackout") !== "1") return;
+        if (document.getElementById("risque-post-receive-blackout")) return;
+        var st = document.createElement("style");
+        st.id = "risque-post-receive-blackout-early-inline";
+        st.textContent =
+          "#risque-post-receive-blackout{position:fixed;inset:0;z-index:2147483647;margin:0;padding:0;" +
+          "background:#000;pointer-events:none}";
+        document.head.appendChild(st);
+        var d = document.createElement("div");
+        d.id = "risque-post-receive-blackout";
+        d.setAttribute("aria-hidden", "true");
+        document.body.appendChild(d);
+      } catch (e) {
+        /* ignore */
+      }
+    })();
+  </script>
+  <header class="topbar">
+    <div class="topbar-title">RISQUE Runtime (visual)</div>
+    <div class="topbar-actions">
+      <button type="button" id="btnLauncher">Launcher</button>
+      <button type="button" id="btnLegacy">Launcher</button>
+      <button type="button" id="btnMovePublic">Move Public Window</button>
+      <button type="button" id="btnSave">Save Snapshot</button>
+      <button type="button" id="btnReload" title="Reload this page (same as browser refresh; works with Live Server)">
+        Reload page
+      </button>
+      <button type="button" id="btnExportLedger">Export Ledger</button>
+      <button type="button" id="btnClearLedger">Clear Ledger</button>
+    </div>
+  </header>
+
+  <div class="runtime-shell">
+    <aside class="runtime-panel">
+      <div id="viz-diagnostics" class="viz-box" aria-live="polite"></div>
+      <div class="panel-card">
+        <div class="phase" id="phaseLabel">Phase: boot</div>
+        <div id="app"></div>
+      </div>
+    </aside>
+    <div class="runtime-stage-host" aria-label="Game board">
+      <div class="canvas-wrapper" id="canvas">
+        <svg class="svg-overlay" viewBox="0 0 1920 1080" xmlns="http://www.w3.org/2000/svg"></svg>
+        <div class="ui-overlay" id="ui-overlay"></div>
+        <div id="error" class="error"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="risque-public-login-hint" class="risque-public-login-hint" aria-live="polite">
+    <div class="risque-public-login-hint-inner">
+      <p class="risque-public-login-hint-title">Public board</p>
+      <p class="risque-public-login-hint-copy">
+        Sign in on the <strong>host</strong> window (laptop). This screen updates when the host changes the game.
+      </p>
+    </div>
+  </div>
+
+  <div id="risque-public-tv-bar" class="risque-public-tv-bar" aria-label="Public display">
+    <span class="risque-public-tv-bar-label">TV view</span>
+    <button
+      type="button"
+      id="risque-public-fullscreen-btn"
+      class="risque-public-fullscreen-btn"
+      title="Fill the screen (browser fullscreen, like F11)"
+    >
+      Fullscreen
+    </button>
+  </div>
+  <script>
+    (function () {
+      if (!window.risqueDisplayIsPublic) return;
+
+      var TV_PING_STORAGE_KEY = "risquePublicTvCommand";
+
+      function wirePublicFullscreen() {
+        var btn = document.getElementById("risque-public-fullscreen-btn");
+        var bar = document.getElementById("risque-public-tv-bar");
+        if (!btn) return;
+
+        function syncLabel() {
+          var fs = document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement;
+          btn.textContent = fs ? "Exit fullscreen" : "Fullscreen";
+          btn.setAttribute("aria-pressed", fs ? "true" : "false");
+          if (bar && fs) bar.removeAttribute("data-risque-pending-fullscreen");
+        }
+
+        function requestFullscreenDoc() {
+          var doc = document.documentElement;
+          var req = doc.requestFullscreen || doc.webkitRequestFullscreen || doc.msRequestFullscreen;
+          if (!req) return Promise.reject();
+          return Promise.resolve(req.call(doc)).then(syncLabel);
+        }
+
+        function exitFullscreenDoc() {
+          var ex = document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen;
+          if (!ex) return Promise.resolve();
+          return Promise.resolve(ex.call(document)).then(syncLabel);
+        }
+
+        function toggleFullscreenFromGesture() {
+          var fs = document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement;
+          if (!fs) {
+            return requestFullscreenDoc().catch(function () {});
+          }
+          return exitFullscreenDoc().catch(function () {});
+        }
+
+        btn.addEventListener("click", function () {
+          toggleFullscreenFromGesture();
+        });
+
+        document.addEventListener("fullscreenchange", syncLabel);
+        document.addEventListener("webkitfullscreenchange", syncLabel);
+        document.addEventListener("MSFullscreenChange", syncLabel);
+        syncLabel();
+
+        function setPendingFullscreenUi(on) {
+          if (!bar) return;
+          if (on) bar.setAttribute("data-risque-pending-fullscreen", "1");
+          else bar.removeAttribute("data-risque-pending-fullscreen");
+        }
+
+        function armOneClickFullscreen() {
+          setPendingFullscreenUi(true);
+          function onFirstPointer() {
+            document.removeEventListener("pointerdown", onFirstPointer, true);
+            setPendingFullscreenUi(false);
+            var fs = document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement;
+            if (!fs) {
+              requestFullscreenDoc().catch(function () {});
+            }
+          }
+          document.addEventListener("pointerdown", onFirstPointer, true);
+        }
+
+        function consumeTvFullscreenQuery() {
+          try {
+            var u = new URL(window.location.href);
+            if (u.searchParams.get("risqueTvFullscreen") !== "1" && u.searchParams.get("tvFullscreen") !== "1") {
+              return false;
+            }
+            u.searchParams.delete("risqueTvFullscreen");
+            u.searchParams.delete("tvFullscreen");
+            history.replaceState(null, "", u.href);
+            return true;
+          } catch (e) {
+            return false;
+          }
+        }
+
+        if (consumeTvFullscreenQuery()) {
+          armOneClickFullscreen();
+        }
+
+        function isHttpLike() {
+          return window.location.protocol === "http:" || window.location.protocol === "https:";
+        }
+
+        if (isHttpLike()) {
+          window.addEventListener("storage", function (ev) {
+            if (!ev.key || ev.key !== TV_PING_STORAGE_KEY) return;
+            var raw = ev.newValue;
+            if (!raw) return;
+            try {
+              var o = JSON.parse(raw);
+              if (!o || String(o.action || "") !== "fullscreen") return;
+            } catch (eSt) {
+              return;
+            }
+            armOneClickFullscreen();
+          });
+        }
+      }
+
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", wirePublicFullscreen);
+      } else {
+        wirePublicFullscreen();
+      }
+    })();
+  </script>
+
+  <script src="js/core.js?v=std-income-meta-syntaxfix-2026-04-27f"></script>
+  <script src="js/replay-tape.js?v=round-replay-attack-tail-2026-05-01"></script>
+  <script src="js/risque-session-disk.js?v=flat-save-no-discard-2026-05-02"></script>
+  <script src="js/risque-session-staging.js?v=staging-disk-opt-in-2026-04-29"></script>
+  <script src="js/risque-external-urls.js"></script>
+  <script src="js/risque-local-disk.js?v=launcher-disk-api-2026-05-01"></script>
+  <script src="phases/login.js?v=login-clear-session-on-start-2026-05-02"></script>
+  <script src="phases/privacy-gate.js?v=privacy-continue-quota-2026-05-01"></script>
+  <script src="phases/player-select.js?v=selection-phase-coerce-2026-05-02"></script>
+  <script src="phases/deal.js"></script>
+  <script src="phases/deploy.js?v=deploy-clear-std-income-meta-2026-04-27e"></script>
+  <script src="phases/conquer.js?v=conquer-mirror-order-2026-04-14"></script>
+  <script src="phases/attack.js?v=campaign-capture-replay-tape-2026-05-02"></script>
+  <script src="phases/runtime-hud.js?v=public-card-processing-title-2026-04-28"></script>
+  <script src="js/post-cardplay-navigator.js"></script>
+  <script src="phases/cardplay.js?v=cardplay-entry-replay-deal-2026-05-01"></script>
+  <script src="phases/income.js?v=income-std-income-continent-meta-2026-04-27e"></script>
+  <script src="phases/con-income-phase.js?v=con-income-player-casefix-2026-04-27e"></script>
+  <script src="phases/attack-phase.js?v=capture-attack-entry-continents-2026-04-26"></script>
+  <script src="phases/reinforce.js?v=host-reinforce-trooprow"></script>
+  <script src="phases/reinforce-phase.js?v=reinforce-phase-flex-order-2026-04-19b"></script>
+  <script src="phases/receivecard.js?v=cardplay-entry-replay-deal-2026-05-01"></script>
+  <script src="phases/postgame.js?v=flat-archive-msg-2026-05-02"></script>
+  <script src="phases/conquer-phase.js?v=conquer-runtime-2026-04-13"></script>
+  <script src="js/risque-save-folder-idb.js?v=autosave-folder-2026-04-30"></script>
+  <script src="js/game-shell.js?v=mirror-push-savestate-login-racefix-2026-05-02"></script>
+</body>
+</html>

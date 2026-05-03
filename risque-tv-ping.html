@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RISQUE — TV fullscreen ping</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      margin: 24px;
+    }
+    code {
+      background: #1e293b;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    .muted {
+      opacity: 0.85;
+      font-size: 14px;
+      line-height: 1.45;
+    }
+  </style>
+</head>
+<body>
+  <p><strong>TV ping sent.</strong> Switch to the public tab and click once on the board (or the green bar).</p>
+  <p class="muted">This page only works when opened over <code>http://</code> or <code>https://</code> on the <strong>same origin</strong> as the game (e.g. Live Server). <code>file://</code> cannot share this signal between tabs — use <code>risque-tv-fullscreen-helper.bat</code> in <strong>file</strong> mode instead.</p>
+  <script>
+    (function () {
+      var key = "risquePublicTvCommand";
+      try {
+        if (window.location.protocol === "http:" || window.location.protocol === "https:") {
+          localStorage.setItem(
+            key,
+            JSON.stringify({ action: "fullscreen", at: Date.now() })
+          );
+        }
+      } catch (e) {
+        /* ignore */
+      }
+      try {
+        window.close();
+      } catch (e2) {
+        /* ignore */
+      }
+    })();
+  </script>
+</body>
+</html>

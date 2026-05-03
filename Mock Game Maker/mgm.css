@@ -1,0 +1,1279 @@
+:root {
+  color-scheme: dark;
+  --bg: #0f172a;
+  --panel: #1e293b;
+  --border: #334155;
+  --text: #e2e8f0;
+  --muted: #94a3b8;
+  --accent: #38bdf8;
+  --accent-dim: #0ea5e9;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: Arial, sans-serif;
+}
+
+#screen-welcome,
+#screen-players {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.mgm-card {
+  width: min(520px, 100%);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 28px;
+}
+
+.mgm-card h1 {
+  margin: 0 0 10px;
+  font-size: 1.45rem;
+}
+
+.mgm-card p {
+  margin: 0 0 18px;
+  color: var(--muted);
+  line-height: 1.55;
+  font-size: 15px;
+}
+
+.mgm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.mgm-btn {
+  border: 0;
+  border-radius: 10px;
+  padding: 12px 18px;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 15px;
+  background: #334155;
+  color: var(--text);
+}
+
+.mgm-btn:hover {
+  background: #475569;
+}
+
+.mgm-btn-primary {
+  background: var(--accent-dim);
+  color: #0f172a;
+}
+
+.mgm-btn-primary:hover {
+  background: var(--accent);
+}
+
+#screen-players .player-row {
+  display: grid;
+  grid-template-columns: 1fr 140px;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+#screen-players label {
+  font-size: 13px;
+  color: var(--muted);
+  display: block;
+  margin-bottom: 4px;
+}
+
+#screen-players input[type="text"] {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #0f172a;
+  color: var(--text);
+  font-size: 15px;
+}
+
+#screen-players select {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #0f172a;
+  color: var(--text);
+  font-size: 14px;
+}
+
+#screen-designer {
+  min-height: 100vh;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #020617;
+}
+
+/* Sized by JS to (1920×scale) × (1080×scale); clips the scaled frame. */
+.mgm-designer-root {
+  position: relative;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+/* Fixed logical board coordinates: 1920 × 1080. Scaled from top-left inside root. */
+.mgm-designer-frame {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1920px;
+  height: 1080px;
+  transform-origin: top left;
+  pointer-events: none;
+}
+
+.mgm-designer-frame > * {
+  pointer-events: auto;
+}
+
+/* Full stage (markers use same 1920×1080 space as core.js). */
+#screen-designer #canvas.canvas-wrapper {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1920px;
+  height: 1080px;
+  transform: none !important;
+  transform-origin: top left;
+}
+
+/* Map markers (game.css is not loaded in MGM — transitions live here). */
+#screen-designer .svg-overlay circle.territory-circle {
+  cursor: pointer;
+  transition: r 0.2s ease-out, stroke-width 0.2s ease-out;
+}
+#screen-designer .svg-overlay circle.territory-mgm-selected-visual {
+  transition: r 0.28s cubic-bezier(0.22, 1, 0.36, 1), stroke-width 0.2s ease-out;
+}
+#screen-designer .svg-overlay text.territory-number {
+  cursor: pointer;
+  transition: font-size 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/*
+ * HUD strip in board space (1080…1920), inset 25px on every side so the panel is
+ * smaller but stays centered in that region (same center as full 840×1080 box).
+ */
+#mgm-control-panel {
+  position: absolute;
+  left: calc(1080px + 25px);
+  top: 25px;
+  width: calc(840px - 50px);
+  height: calc(1080px - 50px);
+  box-sizing: border-box;
+  background: var(--panel);
+  border-left: 2px solid var(--border);
+  padding: 10px 12px 8px;
+  overflow: hidden;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  font-size: 18px;
+  line-height: 1.35;
+}
+
+#mgm-control-panel label {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+#mgm-control-panel .mgm-tool-panel select,
+#mgm-control-panel .mgm-tool-panel input[type="number"],
+#mgm-control-panel .mgm-tool-panel input[type="text"] {
+  font-size: 18px;
+  padding: 12px 10px;
+  margin-bottom: 12px;
+}
+
+#mgm-control-panel .mgm-tool-body .mgm-btn {
+  font-size: 18px;
+  padding: 14px 16px;
+  border-radius: 12px;
+}
+
+/* Fills the column under the title; toolbox is docked inside this area (not beside the map). */
+.mgm-control-fill {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.mgm-embedded-login-host {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Let the embedded form fill height without scrollbars (content sized to fit). */
+.mgm-embedded-login-host:not(:empty) {
+  display: flex;
+  flex-direction: column;
+}
+
+/* After login the host is cleared; do not leave a flex gap above the tool chrome. */
+.mgm-embedded-login-host:empty {
+  flex: 0 0 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.mgm-editor-chrome[hidden] {
+  display: none !important;
+}
+
+.mgm-editor-chrome:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Embedded login (phases/login.js) — same structure as overlay form, scoped to HUD strip */
+#risque-login-embedded-root {
+  box-sizing: border-box;
+  font-family: Arial, sans-serif;
+  color: #e2e8f0;
+  padding: 4px 6px 6px;
+  max-width: 100%;
+  text-transform: uppercase;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#risque-login-embedded-root * {
+  box-sizing: border-box;
+}
+
+#risque-login-embedded-root .mgm-embedded-login-welcome {
+  font-size: 26px;
+  font-weight: 800;
+  color: #4ade80;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 0 0 4px;
+  line-height: 1.15;
+  flex-shrink: 0;
+}
+
+#risque-login-embedded-root .login-prompt {
+  font-size: 24px;
+  font-weight: 700;
+  color: #4ade80;
+  text-align: center;
+  margin: 0 0 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  line-height: 1.15;
+  flex-shrink: 0;
+}
+
+#risque-login-embedded-root .color-swatches {
+  display: flex;
+  justify-content: center;
+  align-items: stretch;
+  gap: 6px;
+  margin-bottom: 8px;
+  flex-wrap: nowrap;
+  padding: 8px 6px;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+  flex-shrink: 0;
+}
+
+#risque-login-embedded-root .color-swatch {
+  flex: 1 1 0;
+  min-width: 0;
+  width: auto;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 800;
+  color: #fff;
+  cursor: pointer;
+  border: 2px solid rgba(255, 255, 255, 0.92);
+  border-radius: 6px;
+  padding: 2px 4px;
+  text-align: center;
+  line-height: 1.05;
+  white-space: normal;
+  word-break: break-word;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.12);
+}
+
+#risque-login-embedded-root .color-swatch.active {
+  filter: brightness(1.12);
+  outline: 2px solid #22c55e;
+  outline-offset: 1px;
+}
+
+#risque-login-embedded-root .color-swatch.unavailable {
+  opacity: 0.35;
+  cursor: default;
+  pointer-events: none;
+}
+
+#risque-login-embedded-root .color-swatch.blue {
+  background: #0000ff;
+}
+
+#risque-login-embedded-root .color-swatch.red {
+  background: #ff0000;
+}
+
+#risque-login-embedded-root .color-swatch.green {
+  background: #008000;
+}
+
+#risque-login-embedded-root .color-swatch.yellow {
+  background: #ffff00;
+  color: #000;
+}
+
+#risque-login-embedded-root .color-swatch.black {
+  background: #000;
+  color: #fff;
+  border: 2px solid #f1f5f9;
+}
+
+#risque-login-embedded-root .color-swatch.pink {
+  background: #ff69b4;
+  color: #000;
+}
+
+/* Two columns of three rows — fits the HUD height without scrolling. */
+#risque-login-embedded-root #player-form-js {
+  flex: 1 1 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 8px;
+  align-content: start;
+  overflow: hidden;
+}
+
+#risque-login-embedded-root .player-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 0;
+  gap: 6px;
+  min-width: 0;
+}
+
+#risque-login-embedded-root .player-row label {
+  width: 72px;
+  flex-shrink: 0;
+  color: #4ade80;
+  font-size: 16px;
+  font-weight: 800;
+  text-transform: uppercase;
+  text-align: center;
+  line-height: 1.1;
+}
+
+#risque-login-embedded-root .player-row input {
+  flex: 1;
+  min-width: 0;
+  min-height: 52px;
+  height: 52px;
+  padding: 4px 8px;
+  font-size: 22px;
+  font-weight: 700;
+  text-transform: uppercase;
+  border: 1px solid #22c55e;
+  border-radius: 4px;
+  background: #0f172a;
+  color: #4ade80;
+}
+
+#risque-login-embedded-root .player-row input::placeholder {
+  text-transform: uppercase;
+  color: #64748b;
+  font-size: 18px;
+}
+
+#risque-login-embedded-root .color-field {
+  width: 52px;
+  height: 52px;
+  flex-shrink: 0;
+  border: 1px solid #22c55e;
+  border-radius: 4px;
+  background: #000;
+  cursor: pointer;
+}
+
+#risque-login-embedded-root .login-button,
+#risque-login-embedded-root .load-button {
+  display: block;
+  width: 100%;
+  max-width: none;
+  margin: 8px 0 0;
+  padding: 14px 12px;
+  font-size: 26px;
+  font-weight: 800;
+  border-radius: 8px;
+  cursor: pointer;
+  text-transform: uppercase;
+  border: 2px solid #14532d;
+  line-height: 1.12;
+  white-space: normal;
+  word-break: break-word;
+  text-align: center;
+  min-height: 52px;
+  flex-shrink: 0;
+}
+
+#risque-login-embedded-root .login-button {
+  background: #22c55e;
+  color: #0f172a;
+}
+
+#risque-login-embedded-root .login-button:hover {
+  background: #4ade80;
+}
+
+#risque-login-embedded-root .load-button {
+  background: #eab308;
+  color: #000;
+  border-color: #854d0e;
+}
+
+#risque-login-embedded-root .login-docs-row {
+  display: flex;
+  gap: 8px;
+  justify-content: stretch;
+  margin-top: 8px;
+  flex-wrap: nowrap;
+  flex-shrink: 0;
+}
+
+#risque-login-embedded-root .login-doc-button {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 12px 8px;
+  font-size: 22px;
+  font-weight: 800;
+  border-radius: 8px;
+  border: 2px solid #14532d;
+  background: #22c55e;
+  color: #0f172a;
+  cursor: pointer;
+  text-transform: uppercase;
+  line-height: 1.12;
+  white-space: normal;
+  word-break: break-word;
+  text-align: center;
+  min-height: 56px;
+}
+
+#risque-login-embedded-root .login-doc-button:hover {
+  background: #4ade80;
+  border-color: #166534;
+}
+
+#risque-login-embedded-root #login-js-error {
+  color: #f87171;
+  text-align: center;
+  margin-top: 6px;
+  font-size: 18px;
+  line-height: 1.2;
+  min-height: 0;
+  max-height: 2.5em;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+#risque-login-embedded-root .risque-login-preset-bar {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  width: 100%;
+  margin-top: 8px;
+  margin-bottom: 4px;
+  align-items: stretch;
+  flex-shrink: 0;
+}
+
+#risque-login-embedded-root .risque-login-preset-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 64px;
+  padding: 6px 4px;
+  border: 2px solid #14532d;
+  border-radius: 8px;
+  cursor: pointer;
+  background: #22c55e;
+  color: #0f172a;
+  font-family: Arial, sans-serif;
+  font-weight: 900;
+  text-transform: uppercase;
+  transition: background 0.15s ease, border-color 0.15s ease;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+  line-height: 1.1;
+  white-space: normal;
+  word-break: break-word;
+  text-align: center;
+}
+
+#risque-login-embedded-root .risque-login-preset-slot:hover {
+  background: #4ade80;
+  border-color: #166534;
+}
+
+#risque-login-embedded-root .risque-login-preset-slot-line {
+  display: block;
+  font-size: 16px;
+  letter-spacing: 0.04em;
+  line-height: 1.1;
+}
+
+#risque-login-embedded-root .risque-login-preset-slot-num {
+  display: block;
+  font-size: 26px;
+  font-weight: 900;
+  line-height: 1.1;
+  margin-top: 2px;
+}
+
+#risque-login-embedded-root .risque-login-random-order--bar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 56px;
+  padding: 8px 10px;
+  border: 2px solid #14532d;
+  border-radius: 8px;
+  cursor: pointer;
+  background: #22c55e;
+  color: #0f172a;
+  font-family: Arial, sans-serif;
+  font-weight: 800;
+  font-size: 20px;
+  line-height: 1.12;
+  text-align: center;
+  text-transform: uppercase;
+  transition: background 0.15s ease, border-color 0.15s ease;
+  white-space: normal;
+  word-break: break-word;
+}
+
+#risque-login-embedded-root .risque-login-random-order--bar:hover {
+  background: #4ade80;
+  border-color: #166534;
+}
+
+.mgm-panel-head {
+  flex-shrink: 0;
+}
+
+#mgm-control-panel h2 {
+  margin: 0 0 8px;
+  font-size: 1.65rem;
+}
+
+.mgm-panel-head-hint {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.4;
+  margin: 0;
+}
+
+#mgm-control-panel .hint {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.45;
+  margin-bottom: 10px;
+}
+
+.mgm-tool-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  flex-shrink: 0;
+  padding-top: 10px;
+  border-top: 2px solid var(--border);
+  margin-top: 6px;
+}
+
+.mgm-tool-nav-btn {
+  flex: 1 1 calc(50% - 6px);
+  min-width: 0;
+  padding: 16px 12px;
+  border-radius: 12px;
+  border: 2px solid var(--border);
+  background: #0f172a;
+  color: var(--text);
+  font-size: 20px;
+  font-weight: 800;
+  cursor: pointer;
+  text-align: center;
+}
+
+.mgm-tool-nav-btn:hover {
+  background: #1e293b;
+  border-color: var(--muted);
+}
+
+.mgm-tool-nav-btn-active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent);
+  color: var(--accent);
+}
+
+.mgm-tool-nav-btn-active::before {
+  content: "✓ ";
+  font-size: 26px;
+  font-weight: 900;
+  vertical-align: -2px;
+}
+
+.mgm-tool-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding-right: 0;
+}
+
+.mgm-tool-panel[hidden] {
+  display: none !important;
+}
+
+.mgm-tool-panel:not([hidden]) {
+  display: block;
+}
+
+.mgm-tool-title {
+  margin: 0 0 12px;
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.mgm-btn-compact {
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+.mgm-map-palette {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: stretch;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.mgm-palette-chip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1 1 calc(33.333% - 10px);
+  min-width: 96px;
+  max-width: 160px;
+  min-height: 88px;
+  padding: 10px 8px;
+  border-radius: 18px;
+  border: 3px solid rgba(15, 23, 42, 0.45);
+  cursor: pointer;
+  font-weight: 800;
+  font-size: 20px;
+  text-align: center;
+  line-height: 1.15;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.mgm-palette-chip:hover {
+  filter: brightness(1.08);
+}
+
+.mgm-palette-chip-active {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.mgm-palette-chip--unowned {
+  flex: 1 1 100%;
+  max-width: none;
+  min-height: 56px;
+  background: #475569 !important;
+  color: #f8fafc !important;
+  font-size: 20px;
+}
+
+.mgm-palette-chip-name {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mgm-map-bulk-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.mgm-bulk-btn {
+  flex: 1 1 calc(33.333% - 8px);
+  min-height: 52px;
+  font-size: 18px !important;
+  font-weight: 800 !important;
+}
+
+.mgm-map-continent-block {
+  margin-bottom: 12px;
+}
+
+.mgm-continent-block-label {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.mgm-continent-btn-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mgm-continent-sel-btn {
+  flex: 1 1 calc(50% - 6px);
+  min-height: 48px;
+  font-size: 16px !important;
+  font-weight: 700 !important;
+  padding: 8px 10px !important;
+}
+
+.mgm-select-hint {
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--muted);
+  margin: 0 0 14px;
+}
+
+.mgm-select-hint kbd {
+  font: inherit;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: #0f172a;
+  color: var(--text);
+}
+
+.mgm-save-label {
+  display: block;
+  font-size: 18px;
+  color: var(--text);
+  margin: 12px 0 6px;
+  font-weight: 700;
+}
+
+.mgm-troop-inline {
+  background: #0f172a;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px 12px;
+  margin-bottom: 8px;
+}
+
+.mgm-troop-territory-line {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 10px;
+}
+
+.mgm-troop-inline #mgm-troop-input {
+  width: 100%;
+  margin-top: 0;
+}
+
+.mgm-section {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.mgm-section label {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.mgm-filename-input {
+  width: 100%;
+  margin-bottom: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #0f172a;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.mgm-section select,
+.mgm-section input[type="number"] {
+  width: 100%;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #0f172a;
+  color: var(--text);
+}
+
+.mgm-cc-bulk-block {
+  margin-bottom: 16px;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #0f172a;
+}
+
+.mgm-cc-bulk-hint {
+  margin: 0 0 12px;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.mgm-cc-bulk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.mgm-cc-bulk-label {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  flex: 1 1 100%;
+}
+
+.mgm-cc-bulk-select {
+  width: 88px;
+  min-height: 48px;
+  padding: 8px 10px;
+  font-size: 18px;
+  font-weight: 700;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #1e293b;
+  color: var(--text);
+}
+
+.mgm-cc-bulk-apply,
+.mgm-cc-bulk-random {
+  flex: 1 1 calc(50% - 6px);
+  min-height: 48px;
+  font-size: 16px !important;
+  font-weight: 700 !important;
+}
+
+.mgm-continent-row {
+  display: grid;
+  grid-template-columns: 1fr 88px;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 10px;
+  font-size: 18px;
+}
+
+.mgm-continent-row span {
+  color: var(--muted);
+}
+
+.mgm-troop-input-label {
+  display: block;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 8px;
+}
+
+#mgm-troop-input {
+  padding: 14px 12px;
+  border-radius: 10px;
+  border: 2px solid var(--border);
+  background: #0f172a;
+  color: var(--text);
+  font-size: 24px;
+  font-weight: 800;
+}
+
+#mgm-troop-input:disabled {
+  opacity: 0.45;
+}
+
+/* Legacy: canvas rules for designer are under #screen-designer above. */
+
+/* Card assignment modal — [hidden] must win over flex (see #deck-modal bug) */
+.mgm-card-modal[hidden] {
+  display: none !important;
+}
+
+.mgm-card-modal:not([hidden]) {
+  display: block;
+}
+
+.mgm-card-modal-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: min(24px, 3vw);
+  box-sizing: border-box;
+}
+
+.mgm-card-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.82);
+  cursor: pointer;
+}
+
+.mgm-card-modal-dialog {
+  position: relative;
+  z-index: 1;
+  width: min(1100px, 96vw);
+  max-height: min(88vh, 900px);
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+
+.mgm-card-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.mgm-card-modal-header h2 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.mgm-card-modal-presets {
+  padding: 10px 18px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  background: rgba(15, 23, 42, 0.35);
+}
+
+.mgm-card-preset-hint {
+  margin: 0 0 10px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.mgm-card-preset-hint strong {
+  color: var(--text);
+}
+
+.mgm-card-preset-bar {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+  width: 100%;
+  max-width: 520px;
+  margin: 0 auto;
+  align-items: stretch;
+  box-sizing: border-box;
+}
+
+.mgm-card-preset-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 46px;
+  padding: 4px 2px;
+  border: 2px solid #14532d;
+  border-radius: 8px;
+  cursor: pointer;
+  background: #22c55e;
+  color: #0f172a;
+  font-family: Arial, sans-serif;
+  font-weight: 900;
+  text-transform: uppercase;
+  transition: background 0.15s ease, border-color 0.15s ease, filter 0.15s ease;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+
+.mgm-card-preset-slot:hover {
+  background: #16a34a;
+  border-color: #166534;
+  filter: brightness(1.05);
+}
+
+.mgm-card-preset-line {
+  display: block;
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  line-height: 1.1;
+}
+
+.mgm-card-preset-num {
+  display: block;
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 1.1;
+  margin-top: 1px;
+}
+
+.mgm-card-modal-split {
+  display: flex;
+  flex-direction: row;
+  flex: 1;
+  min-height: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+@media (max-width: 720px) {
+  .mgm-card-modal-split {
+    flex-direction: column;
+  }
+}
+
+.mgm-card-modal-col {
+  flex: 1;
+  min-width: 0;
+  min-height: 280px;
+  padding: 14px 16px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.mgm-card-modal-col:first-child {
+  border-right: 1px solid var(--border);
+}
+
+@media (max-width: 720px) {
+  .mgm-card-modal-col:first-child {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+}
+
+.mgm-card-modal-sub {
+  margin: 0 0 10px;
+  font-size: 14px;
+  color: var(--text);
+  flex-shrink: 0;
+}
+
+.mgm-card-modal-deck-hint {
+  margin: 0 0 10px;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.mgm-card-modal-hands {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 120px;
+}
+
+.mgm-card-modal-deck-grid {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-content: flex-start;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #0f172a;
+  min-height: 160px;
+}
+
+.mgm-card-modal-footer {
+  padding: 12px 18px;
+  display: flex;
+  justify-content: flex-end;
+  flex-shrink: 0;
+}
+
+.mgm-card-modal-player-block {
+  margin-bottom: 18px;
+}
+
+.mgm-card-modal-player-title {
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  padding: 4px 0 4px 10px;
+  cursor: pointer;
+}
+
+.mgm-card-modal-drop {
+  min-height: 56px;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #0f172a;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-content: flex-start;
+  cursor: pointer;
+}
+
+/* Pills sit above the drop zone in the stack; without this, drag never hits the zone. */
+.mgm-card-modal-drop .hand-pill {
+  pointer-events: none;
+}
+
+.mgm-card-modal-drop .hand-pill button {
+  pointer-events: auto;
+}
+
+.mgm-card-modal-dialog .hand-pill {
+  font-size: 12px;
+  padding: 6px 10px;
+}
+
+.mgm-card-modal-deck-grid .deck-card-tile {
+  font-size: 13px;
+  padding: 10px 12px;
+}
+
+.deck-card-tile {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #0f172a;
+  border: 1px solid var(--border);
+  cursor: grab;
+  font-size: 12px;
+  font-weight: 600;
+  user-select: none;
+  max-width: 140px;
+  text-align: center;
+}
+
+.deck-card-tile:hover {
+  border-color: var(--accent);
+}
+
+.deck-card-tile.dragging {
+  opacity: 0.5;
+}
+
+.deck-card-tile.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.55);
+  background: #1e3a5f;
+}
+
+.drop-hint {
+  border: 2px dashed var(--accent) !important;
+  background: rgba(56, 189, 248, 0.08) !important;
+}
+
+.hand-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  margin: 2px;
+  border-radius: 6px;
+  background: #334155;
+  font-size: 11px;
+  cursor: default;
+}
+
+.hand-pill button {
+  border: 0;
+  background: transparent;
+  color: #f87171;
+  cursor: pointer;
+  font-weight: 900;
+  padding: 0 4px;
+  font-size: 14px;
+}
+
+.mgm-status {
+  flex-shrink: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text);
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 2px solid var(--border);
+  min-height: 2em;
+  line-height: 1.35;
+}
+
+.mgm-file {
+  font-size: 12px;
+  margin-top: 8px;
+}
+
+.mgm-file input[type="file"] {
+  font-size: 12px;
+  max-width: 100%;
+}

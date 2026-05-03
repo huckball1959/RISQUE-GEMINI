@@ -1,0 +1,74 @@
+HANDOFF: Instant replay (RISQUE) — for the next agent after restore / reboot
+============================================================================
+
+Context
+-------
+This file describes how instant replay is integrated so you can re-apply or extend it
+without reinventing the flow. Product goal: **replay visible and in sync on both the host
+(private) screen and the public TV (`?display=public`).**
+
+High-level design
+-----------------
+- **Tape** lives on `gameState` as `risqueReplayTape`:
+  `{ v: 2, events: [...], openingRecorded, hasDealFrames? }` (v1 tapes still load).
+- **Events** (chronological); from **v2** onward each event may include **`round`** (game round
+  when recorded, same as `gameState.round`):
+  - `type: "init"` + `board` — opening snapshot at start of **setup deploy** (after deal),
+    **only if** no per-territory deal was recorded (legacy / skipped deal).
+  - `type: "board"` + `segment: "deal"` + `board` — **one snapshot per territory** during
+    random dealing (`phases/deal.js` → `risqueReplayRecordDeal`).
+  - `type: "board"` + `segment: "deploy"` + `board` — setup deploy (and conquer deploy chain).
+  - `type: "board"` + `segment: "battle"` + `board` — after battle resolution.
+  - `type: "elimination"` — conqueror / defeated names (splash + timing).
+- If **`hasDealFrames`** is true, **`risqueReplaySeedOpening`** / **`ensureOpeningFrom`** skip
+  pushing a duplicate **`init`** frame (last deal frame already matches the pre-deploy board).
+- **Playback** (`js/replay-tape.js`): `filterFullReplayEvents(events)` includes init, deal,
+  deploy, battle, and elimination — **not** battle-only.
+- **Timing** (ms): `MS_DEAL` (~95), `MS_DEPLOY` (90), `MS_BATTLE` (140), `MS_INIT` (80),
+  `MS_ELIMINATION` (900), `MS_REPLAY_START_HOLD` (~450) before the first step.
+- **UI**: Bar title **INSTANT REPLAY**; HUD voice lines describe deal / deploy / battle.
+- **Playback** runs on the tab that starts it: `risqueReplayPlaybackActive = true`, `applyBoard`,
+  `renderTerritories` / `renderStats`, `risqueReplayPushMirrorIfHost()` after each frame.
+- **TV sync**: Host calls `risqueMirrorPushGameState()` so `risquePublicMirrorState` updates;
+  public tab applies via `game-shell.js`. `risqueReplayPushMirrorIfHost()` no-ops when
+  `risqueDisplayIsPublic` is true.
+
+Key files
+---------
+- `js/replay-tape.js` — tape schema, `risqueReplayRecordDeal`, `risqueReplaySeedOpening`,
+  `risqueReplayRecordDeploy`, `risqueReplayRecordBattle`, `risqueReplayRecordElimination`,
+  `risqueReplayStart` (start chooser) / `risqueReplayRunPlayback` / `risqueReplayStop`,
+  `filterFullReplayEvents`, `risqueReplayShowStartChooser`, sidecar key
+  `risqueReplayTapeSidecar` (includes `hasDealFrames`), `risqueReplaySyncHostButton`.
+- `phases/deal.js` — calls `risqueReplayRecordDeal` after each territory assignment.
+- `phases/deploy.js`, `phases/con-deploy-phase.js` — seed opening + record deploy.
+- `phases/attack.js` — record battle + elimination.
+- `js/game-shell.js` — mirror pipeline, public apply.
+- `phases/runtime-hud.js` — `#risque-host-instant-replay-btn`.
+- `phases/postgame.js` — sync replay button when mounting.
+- `game.html` — include `js/replay-tape.js` before shell.
+- `game.css` — `.risque-replay-bar`, public HUD rules.
+
+`risqueReplayHasTape` is true if **any** replayable segment exists (deal, init, deploy,
+battle, or elimination), not only battles.
+
+Mirror / quota notes (still relevant)
+---------------------------------------
+- Full `risqueReplayTape` in mirror payloads can stress **localStorage** on long games;
+  consider omitting tape from mirror if TV only needs current `players` per frame.
+- Public may need `risqueReplayPlaybackActive` on mirrored state if any branch hides
+  book/recap overlays during replay.
+
+Integration checklist (after restoring an older backup)
+-------------------------------------------------------
+1. Add `js/replay-tape.js` to `game.html` if missing.
+2. Restore hooks: `risqueReplayRecordDeal` (deal.js), seed/record deploy, record battle/elimination.
+3. Restore HUD REPLAY button + `risqueReplaySyncHostButton`.
+4. Re-test host + TV same origin (`file://` vs `http://` do not share storage).
+
+Conventions
+-----------
+- Host-only recording: `shouldRecord` is false on public display.
+- Public: `game.html?display=public` — phase from mirror.
+
+See also: `docs/manual.html` §10, `docs/help.html` — Instant replay (player-facing).

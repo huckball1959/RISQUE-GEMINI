@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=1920, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <title>RISQUE - Card Transfer Phase</title>
+  <link rel="stylesheet" href="game.css">
+  <style>
+    .cardtransfer-player-name {
+      font-family: Arial, sans-serif;
+      font-size: 40px;
+      font-weight: bold;
+      text-align: center;
+      position: absolute;
+      left: 1152px;
+      top: 508px;
+      width: 704px;
+      height: 64px;
+      z-index: 10;
+      pointer-events: none;
+    }
+    .cardtransfer-button {
+      position: absolute;
+      background: #dcdcdc;
+      border: 2px solid #000000;
+      border-radius: 4px;
+      color: #000000;
+      font-family: Arial, sans-serif;
+      font-size: 16px;
+      font-weight: bold;
+      text-align: center;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+      pointer-events: all;
+      z-index: 10;
+    }
+    .cardtransfer-button:hover:not(:disabled) {
+      background: #c0c0c0;
+    }
+    .cardtransfer-button:active:not(:disabled) {
+      transform: scale(0.95);
+    }
+    .cardtransfer-button:disabled {
+      background: #e0e0e0;
+      border-color: #999999;
+      color: #999999;
+      cursor: not-allowed;
+    }
+    .cardtransfer-message {
+      font-family: Arial, sans-serif;
+      font-size: 24px;
+      font-weight: bold;
+      color: #ffffff;
+      position: absolute;
+      left: 1152px;
+      top: 672px;
+      width: 704px;
+      text-align: center;
+      z-index: 10;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="canvas-wrapper" id="canvas">
+    <svg class="svg-overlay" viewBox="0 0 1920 1080"></svg>
+    <div class="ui-overlay" id="ui-overlay"></div>
+    <div id="error" class="error"></div>
+  </div>
+  <script src="js/core.js"></script>
+  <script>
+    console.log('[CardTransfer] Loaded at', new Date().toLocaleString());
+    function logToStorage(message, data) {
+      const timestamp = new Date().toLocaleString("en-US", { timeZone: "America/New_York" });
+      const logEntry = `[${timestamp}] [CardTransfer] ${message}`;
+      const logs = JSON.parse(localStorage.getItem("gameLogs") || "[]");
+      logs.push(logEntry);
+      if (data) logs.push(JSON.stringify(data, null, 2));
+      localStorage.setItem("gameLogs", JSON.stringify(logs));
+      console.log(logEntry, data || '');
+    }
+    function cardCountAsWord(n) {
+      const words = [
+        "Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten",
+        "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen", "Twenty"
+      ];
+      const num = Math.floor(Number(n));
+      if (!Number.isFinite(num) || num < 0) return "Zero";
+      if (num < words.length) return words[num];
+      return String(num);
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      console.log("[CardTransfer] DOM loaded, initializing");
+      requestAnimationFrame(() => {
+        window.gameUtils.resizeCanvas();
+        setTimeout(window.gameUtils.resizeCanvas, 100);
+        window.gameUtils.loadGameState((gameState) => {
+          if (!gameState) {
+            logToStorage('No game state found');
+            window.gameUtils.showError("No game state found. Redirecting to launch.");
+            setTimeout(() => { window.location.href = 'index.html'; }, 2000);
+            return;
+          }
+          window.gameState = gameState;
+          initCardTransfer();
+          window.gameUtils.renderTerritories(null, gameState);
+          window.gameUtils.renderStats(gameState);
+        });
+      });
+    });
+    window.addEventListener("resize", () => {
+      requestAnimationFrame(() => {
+        window.gameUtils.resizeCanvas();
+        setTimeout(window.gameUtils.resizeCanvas, 100);
+      });
+    });
+    document.addEventListener("fullscreenchange", () => {
+      requestAnimationFrame(() => {
+        window.gameUtils.resizeCanvas();
+        setTimeout(window.gameUtils.resizeCanvas, 100);
+      });
+    });
+    document.addEventListener("webkitfullscreenchange", () => {
+      requestAnimationFrame(() => {
+        window.gameUtils.resizeCanvas();
+        setTimeout(window.gameUtils.resizeCanvas, 100);
+      });
+    });
+    document.addEventListener("mozfullscreenchange", () => {
+      requestAnimationFrame(() => {
+        window.gameUtils.resizeCanvas();
+        setTimeout(window.gameUtils.resizeCanvas, 100);
+      });
+    });
+    document.addEventListener("MSFullscreenChange", () => {
+      requestAnimationFrame(() => {
+        window.gameUtils.resizeCanvas();
+        setTimeout(window.gameUtils.resizeCanvas, 100);
+      });
+    });
+    document.addEventListener("wheel", e => {
+      if (e.ctrlKey) e.preventDefault();
+    }, { passive: false });
+    document.addEventListener("keydown", e => {
+      if (e.key === "Equal" || e.key === "Minus" || (e.ctrlKey && (e.key === "+" || e.key === "-"))) {
+        e.preventDefault();
+      }
+      if (e.key === "F11") {
+        requestAnimationFrame(() => {
+          window.gameUtils.resizeCanvas();
+          setTimeout(window.gameUtils.resizeCanvas, 100);
+        });
+      }
+    });
+    function initCardTransfer() {
+      console.log("[CardTransfer] Initializing card transfer phase");
+      try {
+        const uiOverlay = document.getElementById("ui-overlay");
+        if (!uiOverlay) {
+          logToStorage('UI overlay not found');
+          window.gameUtils.showError("UI overlay not found");
+          return;
+        }
+        const gameState = window.gameState;
+        if (!gameState.players || !gameState.currentPlayer || !gameState.defeatedPlayer) {
+          logToStorage('Invalid game state: missing players, currentPlayer, or defeatedPlayer');
+          window.gameUtils.showError("Invalid game state. Redirecting to launch.");
+          setTimeout(() => { window.location.href = 'index.html'; }, 2000);
+          return;
+        }
+        const currentPlayer = gameState.players.find(p => p.name === gameState.currentPlayer);
+        const defeatedPlayer = gameState.players.find(p => p.name === gameState.defeatedPlayer);
+        if (!currentPlayer || !defeatedPlayer) {
+          logToStorage('Current player or defeated player not found');
+          window.gameUtils.showError("Player not found. Redirecting to launch.");
+          setTimeout(() => { window.location.href = 'index.html'; }, 2000);
+          return;
+        }
+        const playerColor = window.gameUtils.colorMap[currentPlayer.color] || "#ffffff";
+        const transferredCardCount = gameState.transferredCardCount || 0;
+        const defeatedName = defeatedPlayer.name;
+        logToStorage('Cards transferred', { from: defeatedName, to: currentPlayer.name, cardCount: transferredCardCount });
+        const cardWord = transferredCardCount === 1 ? "card" : "cards";
+        const countWord = cardCountAsWord(transferredCardCount);
+        gameState.risquePublicConCardTransferPrimary =
+          currentPlayer.name + " receives " + countWord + " " + cardWord + " from " + defeatedName + ".";
+        gameState.risquePublicConCardTransferReport = "";
+        gameState.phase = "con-cardtransfer";
+        try {
+          localStorage.setItem("gameState", JSON.stringify(gameState));
+        } catch (eSaveInit) {
+          logToStorage("Save card-transfer phase failed", { error: eSaveInit.message || String(eSaveInit) });
+        }
+        let cardTransferContent = `
+          <div class="cardtransfer-player-name" style="color: ${playerColor}">${currentPlayer.name}</div>
+          <div class="cardtransfer-message">Received ${countWord} ${cardWord} from ${defeatedName}</div>
+          <button id="proceed-button" class="cardtransfer-button" style="left: 1152px; top: 768px; width: 704px; height: 64px;">Proceed to Card Play</button>
+        `;
+        uiOverlay.innerHTML = cardTransferContent;
+        uiOverlay.classList.add("visible");
+        const proceedButton = document.getElementById("proceed-button");
+        if (proceedButton) {
+          let proceedLocked = false;
+          function proceedToCardPlay(source) {
+            if (proceedLocked) return;
+            proceedLocked = true;
+            logToStorage(source === "keydown" ? "Proceed button keydown" : "Proceed button clicked", {
+              cardplayConquered: gameState.cardplayConquered
+            });
+            gameState.players = gameState.players.filter(p => p.name !== defeatedName);
+            gameState.turnOrder = gameState.turnOrder.filter(p => p !== defeatedName);
+            gameState.defeatedPlayer = null;
+            gameState.transferredCardCount = 0;
+            gameState.phase = "con-cardplay";
+            gameState.risquePublicConCardTransferPrimary = "";
+            gameState.risquePublicConCardTransferReport = "";
+            logToStorage("Player removed and game state updated", {
+              removedPlayer: defeatedName,
+              newPlayerCount: gameState.players.length,
+              newTurnOrder: gameState.turnOrder,
+              cardplayConquered: gameState.cardplayConquered
+            });
+            try {
+              localStorage.setItem("gameState", JSON.stringify(gameState));
+            } catch (eSave) {
+              logToStorage("Save before con-cardplay failed", { error: eSave.message || String(eSave) });
+            }
+            uiOverlay.classList.add("fade-out");
+            setTimeout(() => {
+              logToStorage("Navigating to con-cardplay.html", { cardplayConquered: gameState.cardplayConquered });
+              window.location.href = "con-cardplay.html";
+            }, 2000);
+          }
+          proceedButton.addEventListener("click", () => proceedToCardPlay("click"));
+          proceedButton.addEventListener("keydown", (e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              proceedToCardPlay("keydown");
+            }
+          });
+        } else {
+          logToStorage('Proceed button not found');
+          window.gameUtils.showError("Proceed button not found");
+        }
+        logToStorage('Card transfer phase initialized', { currentPlayer: currentPlayer.name, defeatedPlayer: defeatedPlayer.name, cardCount: transferredCardCount, cardplayConquered: gameState.cardplayConquered });
+      } catch (e) {
+        logToStorage('Failed to initialize card transfer phase', { error: e.message });
+        window.gameUtils.showError("Failed to initialize card transfer phase");
+      }
+    }
+  </script>
+</body>
+</html>

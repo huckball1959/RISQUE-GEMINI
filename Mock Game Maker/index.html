@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RISQUE — Mock Game Maker</title>
+  <link rel="stylesheet" href="mgm.css" />
+  <script>
+    window.RISQUE_MOCK_MAKER = true;
+    /** Folder that contains game.html for “Save & open game” (default: project root). */
+    window.RISQUE_MGM_EXPORT_GAME_BASE = "../";
+  </script>
+  <script src="../js/core.js"></script>
+  <script src="../js/replay-tape.js"></script>
+  <script src="../js/risque-external-urls.js"></script>
+  <script>
+    (function () {
+      if (window.RISQUE_URLS) {
+        window.RISQUE_URLS.manual = "../docs/manual.html";
+        window.RISQUE_URLS.help = "../docs/help.html";
+        if (window.RISQUE_URLS.loginRecovery) {
+          window.RISQUE_URLS.loginRecovery = window.RISQUE_URLS.loginRecovery.replace(
+            /^game\.html/,
+            "../game.html"
+          );
+        }
+      }
+    })();
+  </script>
+  <script src="../phases/login.js"></script>
+  <script src="mgm.js"></script>
+</head>
+<body>
+  <!-- Board + HUD strip visible immediately; login form mounts inside the control panel. -->
+  <div id="screen-designer">
+    <!-- Logical board: 1920×1080. Map uses full stage; tools live in x = 1080…1920 (840px strip). Whole frame scales to the window. -->
+    <div id="mgm-designer-root" class="mgm-designer-root">
+      <div id="mgm-designer-frame" class="mgm-designer-frame">
+        <div id="canvas" class="canvas-wrapper">
+          <div id="error" class="error"></div>
+        </div>
+
+    <aside id="mgm-control-panel" aria-label="Mock Game Maker tools">
+      <div class="mgm-control-fill">
+        <div id="mgm-embedded-login-host" class="mgm-embedded-login-host" aria-label="Player setup"></div>
+        <div id="mgm-editor-chrome" class="mgm-editor-chrome" hidden>
+        <div class="mgm-panel-head">
+          <h2>Mock Game Maker</h2>
+        </div>
+
+        <div class="mgm-tool-body">
+        <section id="mgm-panel-map" class="mgm-tool-panel" data-mgm-panel="map">
+          <h3 class="mgm-tool-title">Map &amp; troops</h3>
+          <div id="mgm-map-palette" class="mgm-map-palette" role="group" aria-label="Players"></div>
+          <div class="mgm-map-bulk-row">
+            <button type="button" class="mgm-btn mgm-bulk-btn" id="mgm-select-all-terr">Select all</button>
+            <button type="button" class="mgm-btn mgm-bulk-btn" id="mgm-select-none-terr">Unselect all</button>
+            <button type="button" class="mgm-btn mgm-bulk-btn" id="mgm-random-troops">Random 1–25</button>
+          </div>
+          <div class="mgm-map-continent-block" role="group" aria-label="Select all territories in one continent">
+            <div class="mgm-continent-block-label">Continent</div>
+            <div class="mgm-continent-btn-wrap" id="mgm-continent-select-wrap"></div>
+          </div>
+          <p class="mgm-select-hint" id="mgm-multi-select-hint">
+            With multiple territories selected: hold <kbd>Ctrl</kbd> (or <kbd>⌘</kbd> on Mac) and click a territory to remove it from the selection, or click an unselected territory to add it.
+          </p>
+          <div class="mgm-troop-inline">
+            <label class="mgm-troop-input-label" for="mgm-troop-input">Troop count</label>
+            <div class="mgm-troop-territory-line"><span id="mgm-troop-territory">—</span></div>
+            <input type="number" id="mgm-troop-input" min="1" max="9999" value="1" step="1" disabled />
+          </div>
+        </section>
+
+        <section id="mgm-panel-continents" class="mgm-tool-panel" hidden data-mgm-panel="continents">
+          <h3 class="mgm-tool-title">Continent collection counts</h3>
+          <div class="mgm-cc-bulk-block">
+            <p class="mgm-cc-bulk-hint">
+              Set every continent to the same collection count (e.g. 4 = fourth payoff tier), or randomize all at once.
+            </p>
+            <div class="mgm-cc-bulk-actions">
+              <label class="mgm-cc-bulk-label" for="mgm-cc-bulk-value">Set all to</label>
+              <select id="mgm-cc-bulk-value" class="mgm-cc-bulk-select" aria-label="Collection count applied to every continent"></select>
+              <button type="button" class="mgm-btn mgm-cc-bulk-apply" id="mgm-cc-apply-all">Apply to all</button>
+              <button type="button" class="mgm-btn mgm-cc-bulk-random" id="mgm-cc-random-all">Random 1–10</button>
+            </div>
+          </div>
+          <div class="mgm-continent-row"><span>S. America</span><select id="mgm-cc-south_america"></select></div>
+          <div class="mgm-continent-row"><span>N. America</span><select id="mgm-cc-north_america"></select></div>
+          <div class="mgm-continent-row"><span>Africa</span><select id="mgm-cc-africa"></select></div>
+          <div class="mgm-continent-row"><span>Europe</span><select id="mgm-cc-europe"></select></div>
+          <div class="mgm-continent-row"><span>Asia</span><select id="mgm-cc-asia"></select></div>
+          <div class="mgm-continent-row"><span>Australia</span><select id="mgm-cc-australia"></select></div>
+        </section>
+
+        <section id="mgm-panel-round" class="mgm-tool-panel" hidden data-mgm-panel="round">
+          <h3 class="mgm-tool-title">Round &amp; start phase</h3>
+          <label for="mgm-round">Round</label>
+          <input type="number" id="mgm-round" min="1" max="999" value="1" />
+          <label for="mgm-first-player">First player / current</label>
+          <select id="mgm-first-player"></select>
+          <label for="mgm-start-phase">Open runtime at phase</label>
+          <select id="mgm-start-phase"></select>
+        </section>
+
+        <section id="mgm-panel-cards" class="mgm-tool-panel" hidden data-mgm-panel="cards">
+          <h3 class="mgm-tool-title">Cards</h3>
+          <button type="button" class="mgm-btn mgm-btn-primary" id="mgm-open-card-assignment">Open card assignment</button>
+        </section>
+
+        <section id="mgm-panel-save" class="mgm-tool-panel" hidden data-mgm-panel="save">
+          <h3 class="mgm-tool-title">Save &amp; export</h3>
+          <button type="button" class="mgm-btn mgm-btn-primary" id="mgm-export-ls">Save &amp; open game</button>
+          <label for="mgm-export-filename" class="mgm-save-label">JSON file name</label>
+          <input type="text" id="mgm-export-filename" class="mgm-filename-input" placeholder="e.g. blue-crushes-red" value="risque-mock-game" autocomplete="off" spellcheck="false" />
+          <button type="button" class="mgm-btn" id="mgm-export-file" style="margin-top:8px;">Download JSON</button>
+          <button type="button" class="mgm-btn" id="mgm-new-session" title="Clear autosave and show player setup in this panel again">New session (login)</button>
+          <div class="mgm-file">
+            <label>Import JSON</label>
+            <input type="file" id="mgm-import-file" accept="application/json,.json" />
+          </div>
+        </section>
+        </div>
+
+        <nav class="mgm-tool-nav" aria-label="Toolboxes">
+          <button type="button" class="mgm-tool-nav-btn mgm-tool-nav-btn-active" data-mgm-tool="map">Map &amp; troops</button>
+          <button type="button" class="mgm-tool-nav-btn" data-mgm-tool="continents">Continents</button>
+          <button type="button" class="mgm-tool-nav-btn" data-mgm-tool="round">Round &amp; phase</button>
+          <button type="button" class="mgm-tool-nav-btn" data-mgm-tool="cards">Cards</button>
+          <button type="button" class="mgm-tool-nav-btn" data-mgm-tool="save">Save &amp; export</button>
+        </nav>
+
+        <p class="mgm-status" id="mgm-status"></p>
+        </div>
+      </div>
+    </aside>
+
+      </div>
+    </div>
+
+    <div id="mgm-card-modal" class="mgm-card-modal" hidden>
+      <div class="mgm-card-modal-layer">
+        <div class="mgm-card-modal-backdrop" id="mgm-card-modal-backdrop" aria-hidden="true"></div>
+        <div
+          class="mgm-card-modal-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="mgm-card-modal-title"
+        >
+          <div class="mgm-card-modal-header">
+            <h2 id="mgm-card-modal-title">Card assignment</h2>
+            <button type="button" class="mgm-btn" id="mgm-card-modal-close">Close</button>
+          </div>
+          <div class="mgm-card-modal-presets">
+            <p class="mgm-card-preset-hint">
+              <strong>Click</strong> a number to load that preset.
+              <strong>Right-click</strong> (confirm) or <strong>hold ~3s</strong> on a number to save the current hands into that slot.
+              Names must match current players for cards to apply.
+            </p>
+            <div class="mgm-card-preset-bar" id="mgm-card-preset-bar" aria-label="Card hand presets 1 through 6"></div>
+          </div>
+          <div class="mgm-card-modal-split">
+            <div class="mgm-card-modal-col">
+              <h3 class="mgm-card-modal-sub">Players — drop cards here</h3>
+              <div id="mgm-card-modal-hands" class="mgm-card-modal-hands"></div>
+            </div>
+            <div class="mgm-card-modal-col">
+              <h3 class="mgm-card-modal-sub">Available cards</h3>
+              <p class="hint mgm-card-modal-deck-hint">Each card exists only once. <strong>Drag</strong> onto a player’s zone, or <strong>click</strong> a card then click that player’s title or drop area.</p>
+              <div id="deck-card-grid" class="mgm-card-modal-deck-grid" aria-label="Cards not in any hand"></div>
+            </div>
+          </div>
+          <div class="mgm-card-modal-footer">
+            <button type="button" class="mgm-btn mgm-btn-primary" id="mgm-card-modal-done">Done</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,646 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=1920, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no">
+  <title>Reinforcement Phase</title>
+  <link rel="stylesheet" href="../game.css">
+  <script src="../js/core.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%; height: 100%; overflow: hidden; background: #000000;
+      font-family: Arial, sans-serif; touch-action: none; user-select: none;
+    }
+    .canvas-wrapper {
+      width: 1920px; height: 1080px; position: absolute; top: 0; left: 50%;
+      transform-origin: top center; transform: translate(-50%, 0); background: #000000; border: none;
+      pointer-events: auto; opacity: 0; transition: opacity 2s ease; display: none;
+    }
+    .canvas-wrapper.visible { display: block; opacity: 1; }
+    .stage-image {
+      position: absolute; width: 1920px; height: 1080px; top: 0; left: 0; z-index: 0;
+      object-fit: contain; background: #333333; display: none;
+    }
+    .stage-image.visible { display: block; }
+    .svg-overlay {
+      position: absolute; width: 1920px; height: 1080px; top: 0; left: 0; z-index: 1;
+      pointer-events: all; display: none;
+    }
+    .svg-overlay.visible { display: block; }
+    .ui-overlay {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 2;
+      pointer-events: none; display: none;
+    }
+    .ui-overlay.visible { display: block; }
+    .text {
+      position: absolute; color: #000000; font-family: Arial, sans-serif;
+      font-weight: bold; text-align: center; pointer-events: none;
+    }
+    .title { font-size: 40px; left: 1280px; top: 424px; width: 480px; height: 160px; }
+    .player-name { font-size: 40px; left: 1152px; top: 320px; width: 704px; height: 64px; }
+    .error {
+      position: absolute; left: 1152px; top: 384px; width: 704px; max-width: 90%;
+      background: #ffcc00; border: 2px solid #000; border-radius: 10px; padding: 10px;
+      font-size: 18px; color: #cc0000; font-weight: bold; text-align: center; z-index: 3;
+      visibility: hidden; display: none;
+    }
+    .error.visible { display: block; }
+    .prompt {
+      position: absolute; background: #00ffff; border: 2px solid #000; border-radius: 10px;
+      padding: 10px; box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3); pointer-events: all;
+      font-family: Arial, sans-serif; left: 1500px; top: 584px; transform: translate(-50%, 0); width: 704px; max-width: 90%;
+      text-align: center; z-index: 3;
+    }
+    .prompt-text { font-size: 18px; color: #000; margin-bottom: 10px; }
+    .prompt-report { font-size: 16px; color: #cc0000; font-weight: bold; margin-bottom: 10px; text-align: center; }
+    .prompt-button {
+      background: #280b0b; color: #fff; border: none; border-radius: 5px;
+      padding: 8px 16px; font-size: 14px; cursor: pointer; margin: 5px; transition: background 0.2s;
+    }
+    .prompt-button:hover:not(:disabled) { background: #3c1212; }
+    .prompt-input { font-size: 14px; padding: 6px; border-radius: 5px; border: 1px solid #000; margin: 5px; width: 100px; text-align: center; }
+    .territory-circle { cursor: pointer; stroke: #000000; stroke-width: 2; transition: r 0.2s, stroke-width 0.2s; }
+    .territory-circle:hover { r: 35; }
+    .territory-circle.selected { r: 35; stroke-width: 3; }
+    .territory-number { font-family: Arial, sans-serif; font-weight: bold; font-size: 21px; text-anchor: middle; dominant-baseline: central; cursor: pointer; pointer-events: all; }
+  </style>
+</head>
+<body>
+  <div class="canvas-wrapper" id="canvas">
+    <img id="stage-image" src="../assets/images/stage.png" alt="Stage" class="stage-image" onerror="window.gameUtils.showError('Failed to load stage image')">
+    <svg class="svg-overlay" viewBox="0 0 1920 1080" role="region" aria-label="Territory map"></svg>
+    <div class="ui-overlay">
+      <div id="title" class="text title">Reinforcement</div>
+      <div id="player-name" class="text player-name"></div>
+      <div id="error" class="error"></div>
+    </div>
+  </div>
+  <script type="text/javascript">
+    var gk_isXlsx = false;
+    var gk_xlsxFileLookup = {};
+    var gk_fileData = {};
+    function filledCell(cell) {
+      return cell !== '' && cell != null;
+    }
+    function loadFileData(filename) {
+      if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+        try {
+          var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+          var firstSheetName = workbook.SheetNames[0];
+          var worksheet = workbook.Sheets[firstSheetName];
+          var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+          var filteredData = jsonData.filter(row => row.some(filledCell));
+          var headerRowIndex = filteredData.findIndex((row, index) =>
+            row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+          );
+          if (headerRowIndex === -1 || headerRowIndex > 25) {
+            headerRowIndex = 0;
+          }
+          var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex));
+          csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+          return csv;
+        } catch (e) {
+          console.error(e);
+          return "";
+        }
+      }
+      return gk_fileData[filename] || "";
+    }
+  </script>
+  <script>
+    console.log('[Reinforce] Loaded at', new Date().toLocaleString());
+    let currentPlayer = null;
+    let selectedSource = null;
+    let selectedDestination = null;
+    let sourceTerritory = null;
+    let destinationTerritory = null;
+    let troopsToMove = 1;
+    let moveMade = false;
+    let keyboardBuffer = '';
+    let initialTroops = {};
+
+    function logToStorage(message, data) {
+      const timestamp = new Date().toLocaleString("en-US", { timeZone: "America/New_York" });
+      const logEntry = `[${timestamp}] [Reinforce] ${message}`;
+      const logs = JSON.parse(localStorage.getItem("gameLogs") || "[]");
+      logs.push(logEntry);
+      if (data) logs.push(JSON.stringify(data, null, 2));
+      localStorage.setItem("gameLogs", JSON.stringify(logs));
+      console.log(logEntry, data || '');
+    }
+
+    function loadGameState() {
+      try {
+        window.gameState = JSON.parse(localStorage.getItem('gameState') || '{}');
+        if (!window.gameState.players || window.gameState.players.length < 2 || !window.gameState.currentPlayer) {
+          logToStorage('Invalid game state');
+          window.gameUtils.showError('Invalid game state. Redirecting to login.');
+          setTimeout(() => { window.location.href = '../game.html?phase=login&loginLegacyNext=game.html%3Fphase%3DplayerSelect%26selectKind%3DfirstCard&loginLoadRedirect=game.html%3Fphase%3Dcardplay%26legacyNext%3Dincome.html'; }, 2000);
+          return false;
+        }
+        currentPlayer = window.gameState.players.find(p => p.name === window.gameState.currentPlayer);
+        if (!currentPlayer) {
+          logToStorage('No current player');
+          window.gameUtils.showError('No current player. Redirecting to login.');
+          setTimeout(() => { window.location.href = '../game.html?phase=login&loginLegacyNext=game.html%3Fphase%3DplayerSelect%26selectKind%3DfirstCard&loginLoadRedirect=game.html%3Fphase%3Dcardplay%26legacyNext%3Dincome.html'; }, 2000);
+          return false;
+        }
+        window.gameState.players.forEach(player => {
+          if (player.name !== currentPlayer.name) {
+            player.bankValue = 0;
+          }
+        });
+        currentPlayer.territories.forEach(t => {
+          initialTroops[t.name] = t.troops || 1;
+        });
+        return true;
+      } catch (e) {
+        logToStorage(`Failed to load game state: ${e.message}`);
+        window.gameUtils.showError('Failed to load game state. Redirecting to login.');
+        setTimeout(() => { window.location.href = '../game.html?phase=login&loginLegacyNext=game.html%3Fphase%3DplayerSelect%26selectKind%3DfirstCard&loginLoadRedirect=game.html%3Fphase%3Dcardplay%26legacyNext%3Dincome.html'; }, 2000);
+        return false;
+      }
+    }
+
+    function saveGameState() {
+      try {
+        localStorage.setItem('gameState', JSON.stringify(window.gameState));
+        logToStorage('Game state saved');
+      } catch (e) {
+        logToStorage(`Failed to save game state: ${e.message}`);
+        window.gameUtils.showError('Failed to save game state.');
+      }
+    }
+
+    function cloneGameStateWithTempTroops() {
+      const clonedState = JSON.parse(JSON.stringify(window.gameState));
+      if (selectedSource && selectedDestination && troopsToMove > 0) {
+        const source = clonedState.players.find(p => p.name === window.gameState.currentPlayer).territories.find(t => t.name === selectedSource);
+        const destination = clonedState.players.find(p => p.name === window.gameState.currentPlayer).territories.find(t => t.name === selectedDestination);
+        if (source && destination) {
+          source.troops = source.troops - troopsToMove;
+          destination.troops = (destination.troops || 0) + troopsToMove;
+        }
+      }
+      return clonedState;
+    }
+
+    function showPrompt(message, buttons = [], selectOptions = null, report = '') {
+      const existingPrompt = document.getElementById('prompt');
+      let prompt = existingPrompt;
+      let isNewPrompt = !prompt;
+      
+      if (isNewPrompt) {
+        prompt = document.createElement('div');
+        prompt.id = 'prompt';
+        prompt.className = 'prompt';
+        prompt.innerHTML = `<div class="prompt-text">${message}</div>`;
+      } else {
+        prompt.querySelector('.prompt-text').textContent = message;
+      }
+
+      const reportDiv = prompt.querySelector('.prompt-report') || document.createElement('div');
+      reportDiv.className = 'prompt-report';
+      reportDiv.textContent = report;
+      if (report && !prompt.contains(reportDiv)) {
+        prompt.appendChild(reportDiv);
+      } else if (!report) {
+        reportDiv.remove();
+      }
+
+      // Clear existing buttons
+      prompt.querySelectorAll('.prompt-button').forEach(btn => btn.remove());
+
+      // Add troop input and "All but 1"/"All but 3" buttons for troop adjustment
+      if (selectOptions && selectOptions.troops) {
+        let troopsInput = prompt.querySelector('#troops-input');
+        if (!troopsInput) {
+          const troopsLabel = document.createElement('label');
+          troopsLabel.textContent = `Troops to Move (1-${selectOptions.troops.max}): `;
+          troopsInput = document.createElement('input');
+          troopsInput.type = 'number';
+          troopsInput.className = 'prompt-input';
+          troopsInput.id = 'troops-input';
+          troopsInput.min = 1;
+          troopsInput.max = selectOptions.troops.max;
+          troopsInput.autofocus = true;
+          troopsInput.addEventListener('input', () => {
+            let value = parseInt(troopsInput.value);
+            if (isNaN(value) || value < 1) {
+              troopsInput.value = 1;
+              value = 1;
+              window.gameUtils.showError('Troop count must be at least 1.');
+            } else if (value > selectOptions.troops.max) {
+              troopsInput.value = selectOptions.troops.max;
+              value = selectOptions.troops.max;
+              window.gameUtils.showError(`Only ${selectOptions.troops.max} troops available.`);
+            }
+            troopsToMove = value;
+            window.gameUtils.renderTerritories(null, cloneGameStateWithTempTroops());
+            logToStorage(`Input adjusted: troopsToMove=${troopsToMove}`);
+          });
+          prompt.appendChild(troopsLabel);
+          prompt.appendChild(troopsInput);
+        } else {
+          troopsInput.max = selectOptions.troops.max;
+        }
+        troopsInput.value = troopsToMove;
+
+        const sourceTroops = currentPlayer.territories.find(t => t.name === selectedSource).troops;
+        const allButOneButton = document.createElement('button');
+        allButOneButton.className = 'prompt-button';
+        allButOneButton.textContent = 'All but 1';
+        allButOneButton.dataset.action = 'all-but-one';
+        allButOneButton.onclick = () => {
+          troopsToMove = sourceTroops - 1;
+          troopsInput.value = troopsToMove;
+          keyboardBuffer = '';
+          prompt.querySelector('.prompt-text').textContent = `Adjust troops to move from ${selectedSource.replace(/_/g, ' ')} to ${selectedDestination.replace(/_/g, ' ')}.`;
+          window.gameUtils.renderTerritories(null, cloneGameStateWithTempTroops());
+          logToStorage(`All but 1: troopsToMove=${troopsToMove}`);
+        };
+        prompt.appendChild(allButOneButton);
+
+        const allButThreeButton = document.createElement('button');
+        allButThreeButton.className = 'prompt-button';
+        allButThreeButton.textContent = 'All but 3';
+        allButThreeButton.dataset.action = 'all-but-three';
+        allButThreeButton.disabled = selectOptions.troops.max < 3;
+        allButThreeButton.onclick = () => {
+          troopsToMove = Math.max(1, sourceTroops - 3);
+          troopsInput.value = troopsToMove;
+          keyboardBuffer = '';
+          prompt.querySelector('.prompt-text').textContent = `Adjust troops to move from ${selectedSource.replace(/_/g, ' ')} to ${selectedDestination.replace(/_/g, ' ')}.`;
+          window.gameUtils.renderTerritories(null, cloneGameStateWithTempTroops());
+          logToStorage(`All but 3: troopsToMove=${troopsToMove}`);
+        };
+        prompt.appendChild(allButThreeButton);
+      } else {
+        const troopsInput = prompt.querySelector('#troops-input');
+        if (troopsInput) troopsInput.parentElement.remove();
+      }
+
+      // Add buttons from the buttons array
+      buttons.forEach(btn => {
+        const button = document.createElement('button');
+        button.className = 'prompt-button';
+        button.textContent = btn.label;
+        button.dataset.action = btn.label.toLowerCase();
+        button.onclick = btn.onClick;
+        prompt.appendChild(button);
+      });
+
+      if (isNewPrompt) {
+        document.querySelector('.ui-overlay').appendChild(prompt);
+      }
+
+      return prompt.querySelector('button');
+    }
+
+    function advanceTurnToNextCardplay() {
+      const gs = window.gameState || {};
+      if (!gs.turnOrder || !Array.isArray(gs.turnOrder) || gs.turnOrder.length === 0) return false;
+      const currentIndex = gs.turnOrder.indexOf(gs.currentPlayer);
+      if (currentIndex === -1) return false;
+      const nextIndex = (currentIndex + 1) % gs.turnOrder.length;
+      gs.currentPlayer = gs.turnOrder[nextIndex];
+      if (typeof window.gameUtils !== 'undefined' && typeof window.gameUtils.clearContinentalConquestRoutingOnTurnAdvance === 'function') {
+        window.gameUtils.clearContinentalConquestRoutingOnTurnAdvance(gs);
+      }
+      gs.lastCardDrawn = null;
+      gs.cardEarnedViaAttack = false;
+      gs.cardEarnedViaCardplay = false;
+      gs.cardAwardedThisTurn = false;
+      if (nextIndex === 0) {
+        gs.round = (gs.round || 1) + 1;
+      }
+      gs.phase = 'cardplay';
+      return true;
+    }
+
+    function proceedAfterReinforce() {
+      try {
+        const promptEl = document.getElementById('prompt');
+        if (promptEl) promptEl.remove();
+      } catch (e) { /* ignore */ }
+      if (typeof window.risqueClearSpectatorFocus === 'function') {
+        window.risqueClearSpectatorFocus();
+      } else if (window.gameState) {
+        delete window.gameState.risqueSpectatorFocusLabels;
+      }
+      const gs = window.gameState;
+      if (!gs) return;
+      const earned = !!(gs.cardEarnedViaAttack || gs.cardEarnedViaCardplay);
+      const needReceiveCard = earned && !gs.cardAwardedThisTurn;
+      const onGame =
+        typeof window.location !== 'undefined' &&
+        (window.location.pathname.indexOf('game.html') !== -1 || /[\\/]game\.html$/i.test(window.location.pathname));
+      if (needReceiveCard) {
+        gs.phase = 'receivecard';
+        saveGameState();
+        logToStorage('Navigating to receive card phase');
+        window.location.href = '../game.html?phase=receivecard';
+        return;
+      }
+      if (!advanceTurnToNextCardplay()) {
+        window.gameUtils.showError('Could not advance turn after reinforcement.');
+        return;
+      }
+      saveGameState();
+      logToStorage('No card owed — next player cardplay');
+      window.location.href = '../game.html?phase=cardplay&legacyNext=income.html';
+    }
+
+    function skipReinforcement() {
+      if (moveMade) return;
+      try {
+        moveMade = true;
+        proceedAfterReinforce();
+        logToStorage('Skipping reinforcement, proceeding to next phase');
+      } catch (e) {
+        logToStorage(`Failed to skip reinforcement: ${e.message}`);
+        window.gameUtils.showError('Failed to proceed.');
+      }
+    }
+
+    function handleTerritoryClick(label, owner, troops) {
+      if (moveMade) return;
+      try {
+        logToStorage(`Territory clicked: ${label}, owner: ${owner}, troops: ${troops}`);
+        if (!selectedSource) {
+          if (owner !== window.gameState.currentPlayer) {
+            showPrompt('Select territory to reinforce from.', [{ label: 'Cancel', onClick: resetSelection }], null, 'You do not own this territory.');
+            logToStorage('Invalid source: Not owned by player');
+            return;
+          }
+          if (troops < 2) {
+            showPrompt('Select territory to reinforce from.', [{ label: 'Cancel', onClick: resetSelection }], null, 'Need at least 2 troops.');
+            logToStorage('Invalid source: Less than 2 troops');
+            return;
+          }
+          selectedSource = label;
+          sourceTerritory = currentPlayer.territories.find(t => t.name === label);
+          troopsToMove = 1;
+          showPrompt('Select adjacent territory to reinforce to.', [{ label: 'Cancel', onClick: resetSelection }]);
+          window.gameUtils.renderTerritories(selectedSource, window.gameState);
+          logToStorage(`Source selected: ${label}`);
+        } else if (!selectedDestination && label !== selectedSource) {
+          if (owner !== window.gameState.currentPlayer) {
+            showPrompt('Select adjacent territory to reinforce to.', [{ label: 'Cancel', onClick: resetSelection }], null, 'You do not own this territory.');
+            logToStorage('Invalid destination: Not owned by player');
+            return;
+          }
+          if (!window.gameUtils.getAdjacencies(selectedSource).includes(label)) {
+            showPrompt('Select adjacent territory to reinforce to.', [{ label: 'Cancel', onClick: resetSelection }], null, 'Territory must be adjacent.');
+            logToStorage('Invalid destination: Not adjacent');
+            return;
+          }
+          selectedDestination = label;
+          destinationTerritory = currentPlayer.territories.find(t => t.name === label);
+          showPrompt(`Adjust troops to move from ${selectedSource.replace(/_/g, ' ')} to ${selectedDestination.replace(/_/g, ' ')}.`, [
+            { label: 'Confirm', onClick: confirmMove },
+            { label: 'Cancel', onClick: resetSelection }
+          ], { troops: { max: sourceTerritory.troops - 1 } });
+          window.gameUtils.renderTerritories(null, window.gameState);
+          logToStorage(`Destination selected: ${label}`);
+        }
+      } catch (e) {
+        logToStorage(`Error in handleTerritoryClick: ${e.message}`);
+        window.gameUtils.showError('Error selecting territory.');
+      }
+    }
+
+    function resetSelection() {
+      if (moveMade) return;
+      try {
+        selectedSource = null;
+        selectedDestination = null;
+        sourceTerritory = null;
+        destinationTerritory = null;
+        troopsToMove = 1;
+        keyboardBuffer = '';
+        showPrompt(
+          currentPlayer ? currentPlayer.name.toUpperCase() + ' — REINFORCE' : 'REINFORCE',
+          [{ label: 'Skip', onClick: skipReinforcement }]
+        );
+        window.gameUtils.renderTerritories(null, window.gameState);
+        logToStorage('Selection reset');
+      } catch (e) {
+        logToStorage(`Error in resetSelection: ${e.message}`);
+        window.gameUtils.showError('Error resetting selection.');
+      }
+    }
+
+    function confirmMove() {
+      if (!selectedSource || !selectedDestination || troopsToMove < 1 || troopsToMove > (sourceTerritory.troops - 1)) {
+        const sourceTroops = currentPlayer.territories.find(t => t.name === selectedSource).troops;
+        showPrompt(`Adjust troops to move from ${selectedSource.replace(/_/g, ' ')} to ${selectedDestination.replace(/_/g, ' ')}.`, [
+          { label: 'Confirm', onClick: confirmMove },
+          { label: 'Cancel', onClick: resetSelection }
+        ], { troops: { max: sourceTroops - 1 } }, `Must move 1 to ${sourceTroops - 1} troops.`);
+        logToStorage(`Invalid move: troopsToMove=${troopsToMove}, sourceTroops=${sourceTerritory.troops}`);
+        return;
+      }
+      try {
+        sourceTerritory.troops -= troopsToMove;
+        destinationTerritory.troops += troopsToMove;
+        currentPlayer.troopsTotal = currentPlayer.territories.reduce((sum, t) => sum + t.troops, 0);
+        moveMade = true;
+        document.getElementById('prompt').remove();
+        saveGameState();
+        logToStorage(`Move confirmed: Moved ${troopsToMove} troops from ${selectedSource} to ${selectedDestination}`);
+        window.gameUtils.renderTerritories(null, window.gameState);
+        proceedAfterReinforce();
+      } catch (e) {
+        logToStorage(`Error in confirmMove: ${e.message}`);
+        window.gameUtils.showError('Error confirming move.');
+      }
+    }
+
+    function updatePlayerNameDisplay() {
+      const playerNameText = document.getElementById('player-name');
+      playerNameText.textContent = currentPlayer ? currentPlayer.name : 'No Player';
+      playerNameText.style.color = currentPlayer ? window.gameUtils.colorMap[currentPlayer.color] || '#000000' : '#000000';
+    }
+
+    function resizeCanvas() {
+      const canvas = document.getElementById('canvas');
+      if (!canvas) {
+        logToStorage('Canvas not found for scaling');
+        return;
+      }
+      const scale = window.innerHeight / 1080;
+      canvas.style.transform = `translate(-50%, 0) scale(${scale})`;
+      canvas.classList.add('visible');
+      document.querySelector('.stage-image').classList.add('visible');
+      document.querySelector('.svg-overlay').classList.add('visible');
+      document.querySelector('.ui-overlay').classList.add('visible');
+      logToStorage(`Canvas scaled: scale=${scale}, innerWidth=${window.innerWidth}, innerHeight=${window.innerHeight}`);
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      logToStorage('DOM loaded, initializing reinforce');
+      window.gameUtils.init = () => {
+        console.log('[Reinforce] Skipped core.js init to avoid premature canvas setup');
+      };
+      if (!loadGameState()) return;
+      window.gameUtils.initGameView();
+      window.gameUtils.renderTerritories(null, window.gameState);
+      window.gameUtils.renderStats(window.gameState);
+      updatePlayerNameDisplay();
+      showPrompt(
+        currentPlayer ? currentPlayer.name.toUpperCase() + ' — REINFORCE' : 'REINFORCE',
+        [{ label: 'Skip', onClick: skipReinforcement }]
+      );
+      window.addEventListener('resize', () => {
+        requestAnimationFrame(resizeCanvas);
+      });
+      document.addEventListener('fullscreenchange', () => {
+        requestAnimationFrame(resizeCanvas);
+      });
+      document.addEventListener('webkitfullscreenchange', () => {
+        requestAnimationFrame(resizeCanvas);
+      });
+      document.addEventListener('mozfullscreenchange', () => {
+        requestAnimationFrame(resizeCanvas);
+      });
+      document.addEventListener('MSFullscreenChange', () => {
+        requestAnimationFrame(resizeCanvas);
+      });
+      document.addEventListener('wheel', e => {
+        if (e.ctrlKey) e.preventDefault();
+        if (!selectedDestination || moveMade) return;
+        e.preventDefault();
+        const sourceTroops = currentPlayer.territories.find(t => t.name === selectedSource).troops;
+        const delta = e.deltaY > 0 ? -1 : 1;
+        const newTroops = Math.max(1, Math.min(sourceTroops - 1, troopsToMove + delta));
+        if (newTroops !== troopsToMove) {
+          troopsToMove = newTroops;
+          const troopsInput = document.getElementById('troops-input');
+          if (troopsInput) troopsInput.value = troopsToMove;
+          keyboardBuffer = '';
+          showPrompt(`Adjust troops to move from ${selectedSource.replace(/_/g, ' ')} to ${selectedDestination.replace(/_/g, ' ')}.`, [
+            { label: 'Confirm', onClick: confirmMove },
+            { label: 'Cancel', onClick: resetSelection }
+          ], { troops: { max: sourceTroops - 1 } });
+          window.gameUtils.renderTerritories(null, cloneGameStateWithTempTroops());
+          logToStorage(`Wheel adjusted: troopsToMove=${troopsToMove}`);
+        }
+      }, { passive: false });
+      document.addEventListener('keydown', e => {
+        if (e.key === 'Equal' || e.key === 'Minus' || (e.key === '+' || e.key === '-') && e.ctrlKey) {
+          e.preventDefault();
+        }
+        if (e.key === 'F11') {
+          requestAnimationFrame(resizeCanvas);
+        }
+        if (!selectedDestination || moveMade) return;
+        const sourceTroops = currentPlayer.territories.find(t => t.name === selectedSource).troops;
+        if (e.key === 'Enter') {
+          if (keyboardBuffer !== '') {
+            let troops = parseInt(keyboardBuffer);
+            if (isNaN(troops) || troops < 1) {
+              showPrompt(`Adjust troops to move from ${selectedSource.replace(/_/g, ' ')} to ${selectedDestination.replace(/_/g, ' ')}.`, [
+                { label: 'Confirm', onClick: confirmMove },
+                { label: 'Cancel', onClick: resetSelection }
+              ], { troops: { max: sourceTroops - 1 } }, 'Invalid troop count.');
+              keyboardBuffer = '';
+              return;
+            }
+            if (troops > sourceTroops - 1) {
+              showPrompt(`Adjust troops to move from ${selectedSource.replace(/_/g, ' ')} to ${selectedDestination.replace(/_/g, ' ')}.`, [
+                { label: 'Confirm', onClick: confirmMove },
+                { label: 'Cancel', onClick: resetSelection }
+              ], { troops: { max: sourceTroops - 1 } }, `Only ${sourceTroops - 1} troops available.`);
+              keyboardBuffer = '';
+              return;
+            }
+            troopsToMove = troops;
+            const troopsInput = document.getElementById('troops-input');
+            if (troopsInput) troopsInput.value = troopsToMove;
+            keyboardBuffer = '';
+            showPrompt(`Adjust troops to move from ${selectedSource.replace(/_/g, ' ')} to ${selectedDestination.replace(/_/g, ' ')}.`, [
+              { label: 'Confirm', onClick: confirmMove },
+              { label: 'Cancel', onClick: resetSelection }
+            ], { troops: { max: sourceTroops - 1 } });
+            window.gameUtils.renderTerritories(null, cloneGameStateWithTempTroops());
+            logToStorage(`Keyboard adjusted: troopsToMove=${troopsToMove}`);
+          }
+          confirmMove();
+        } else if (e.key >= '0' && e.key <= '9') {
+          keyboardBuffer += e.key;
+          if (keyboardBuffer.length > 3) {
+            showPrompt(`Adjust troops to move from ${selectedSource.replace(/_/g, ' ')} to ${selectedDestination.replace(/_/g, ' ')}.`, [
+              { label: 'Confirm', onClick: confirmMove },
+              { label: 'Cancel', onClick: resetSelection }
+            ], { troops: { max: sourceTroops - 1 } }, 'Troop count must be 3 digits or less.');
+            keyboardBuffer = keyboardBuffer.slice(0, -1);
+          }
+          const troops = parseInt(keyboardBuffer) || 1;
+          troopsToMove = Math.max(1, Math.min(sourceTroops - 1, troops));
+          const troopsInput = document.getElementById('troops-input');
+          if (troopsInput) troopsInput.value = troopsToMove;
+          showPrompt(`Adjust troops to move from ${selectedSource.replace(/_/g, ' ')} to ${selectedDestination.replace(/_/g, ' ')}.`, [
+            { label: 'Confirm', onClick: confirmMove },
+            { label: 'Cancel', onClick: resetSelection }
+          ], { troops: { max: sourceTroops - 1 } });
+          window.gameUtils.renderTerritories(null, cloneGameStateWithTempTroops());
+          logToStorage(`Keyboard adjusted: troopsToMove=${troopsToMove}`);
+        } else if (e.key === 'Backspace') {
+          keyboardBuffer = keyboardBuffer.slice(0, -1);
+          const troops = parseInt(keyboardBuffer) || 1;
+          troopsToMove = Math.max(1, Math.min(sourceTroops - 1, troops));
+          const troopsInput = document.getElementById('troops-input');
+          if (troopsInput) troopsInput.value = troopsToMove;
+          showPrompt(`Adjust troops to move from ${selectedSource.replace(/_/g, ' ')} to ${selectedDestination.replace(/_/g, ' ')}.`, [
+            { label: 'Confirm', onClick: confirmMove },
+            { label: 'Cancel', onClick: resetSelection }
+          ], { troops: { max: sourceTroops - 1 } });
+          window.gameUtils.renderTerritories(null, cloneGameStateWithTempTroops());
+          logToStorage(`Keyboard adjusted: troopsToMove=${troopsToMove}`);
+        }
+      });
+    });
+  </script>
+</body>
+</html>

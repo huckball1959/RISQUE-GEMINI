@@ -1,0 +1,440 @@
+{
+  "phase": "cardplay",
+  "attackPhase": "attack",
+  "selectionPhase": "firstCard",
+  "players": [
+    {
+      "name": "Guido",
+      "color": "blue",
+      "playerOrder": 1,
+      "bookValue": 0,
+      "continentValues": {},
+      "bankValue": 0,
+      "cardCount": 5,
+      "cards": [
+        {
+          "name": "afghanistan",
+          "id": "c3911f0e-5537-46db-8e74-53d762188870"
+        },
+        {
+          "name": "quebec",
+          "id": "9cf57d92-e435-4de8-a12d-ebaeec3482b7"
+        },
+        {
+          "name": "wildcard1",
+          "id": "0ed452f3-2935-4378-897c-ae1707dbd3a5"
+        },
+        {
+          "name": "northwest_territory",
+          "id": "f128a0e5-97ea-4120-99ec-840e3bf1616b"
+        },
+        {
+          "name": "iceland",
+          "id": "3d421d26-4457-4ae7-a924-3b20d784897b"
+        }
+      ],
+      "territories": [
+        {
+          "name": "indonesia",
+          "troops": 1
+        },
+        {
+          "name": "siam",
+          "troops": 1
+        },
+        {
+          "name": "india",
+          "troops": 1
+        },
+        {
+          "name": "afghanistan",
+          "troops": 50
+        },
+        {
+          "name": "china",
+          "troops": 1
+        },
+        {
+          "name": "mongolia",
+          "troops": 1
+        },
+        {
+          "name": "japan",
+          "troops": 1
+        },
+        {
+          "name": "irkutsk",
+          "troops": 1
+        },
+        {
+          "name": "kamchatka",
+          "troops": 75
+        },
+        {
+          "name": "yakutsk",
+          "troops": 1
+        },
+        {
+          "name": "ural",
+          "troops": 1
+        },
+        {
+          "name": "siberia",
+          "troops": 1
+        },
+        {
+          "name": "middle_east",
+          "troops": 50
+        }
+      ],
+      "troopsTotal": 185,
+      "confirmed": true
+    },
+    {
+      "name": "Mickey",
+      "color": "red",
+      "playerOrder": 2,
+      "bookValue": 0,
+      "continentValues": {},
+      "bankValue": 0,
+      "cardCount": 4,
+      "cards": [
+        {
+          "name": "mongolia",
+          "id": "ca257a0b-34a5-4631-9b0a-bd6896592922"
+        },
+        {
+          "name": "north_africa",
+          "id": "ee28682f-dbcb-4fad-8205-67564c253a69"
+        },
+        {
+          "name": "peru",
+          "id": "0f7f4758-8600-44cb-b76c-9a5143d7b154"
+        },
+        {
+          "name": "siam",
+          "id": "e024ac51-4a00-48ed-a66b-54e2d9937eae"
+        }
+      ],
+      "territories": [
+        {
+          "name": "venezuela",
+          "troops": 1
+        },
+        {
+          "name": "peru",
+          "troops": 1
+        },
+        {
+          "name": "argentina",
+          "troops": 1
+        },
+        {
+          "name": "new_guinea",
+          "troops": 1
+        },
+        {
+          "name": "eastern_united_states",
+          "troops": 1
+        },
+        {
+          "name": "western_united_states",
+          "troops": 1
+        },
+        {
+          "name": "alberta",
+          "troops": 1
+        },
+        {
+          "name": "alaska",
+          "troops": 25
+        },
+        {
+          "name": "northwest_territory",
+          "troops": 1
+        },
+        {
+          "name": "ontario",
+          "troops": 5
+        },
+        {
+          "name": "quebec",
+          "troops": 1
+        },
+        {
+          "name": "greenland",
+          "troops": 1
+        },
+        {
+          "name": "central_america",
+          "troops": 1
+        },
+        {
+          "name": "brazil",
+          "troops": 1
+        }
+      ],
+      "troopsTotal": 42,
+      "confirmed": true
+    },
+    {
+      "name": "Nooch",
+      "color": "yellow",
+      "playerOrder": 3,
+      "bookValue": 0,
+      "continentValues": {},
+      "bankValue": 0,
+      "cardCount": 4,
+      "cards": [
+        {
+          "name": "south_africa",
+          "id": "b0b285ad-3a4a-48ac-aae7-3fc0cc9001f2"
+        },
+        {
+          "name": "southern_europe",
+          "id": "7a82aa52-f808-4ac5-89c1-a8b71806c0da"
+        },
+        {
+          "name": "ukraine",
+          "id": "c04511ca-547e-4c95-a0ba-37862c86e487"
+        },
+        {
+          "name": "venezuela",
+          "id": "be8e60ca-0a1c-4567-966f-41395841370b"
+        }
+      ],
+      "territories": [
+        {
+          "name": "north_africa",
+          "troops": 10
+        },
+        {
+          "name": "egypt",
+          "troops": 10
+        },
+        {
+          "name": "congo",
+          "troops": 10
+        },
+        {
+          "name": "south_africa",
+          "troops": 10
+        },
+        {
+          "name": "madagascar",
+          "troops": 10
+        },
+        {
+          "name": "east_africa",
+          "troops": 10
+        },
+        {
+          "name": "western_australia",
+          "troops": 1
+        }
+      ],
+      "troopsTotal": 61,
+      "confirmed": true
+    },
+    {
+      "name": "Karl",
+      "color": "pink",
+      "playerOrder": 4,
+      "bookValue": 0,
+      "continentValues": {},
+      "bankValue": 0,
+      "cardCount": 4,
+      "cards": [
+        {
+          "name": "yakutsk",
+          "id": "2c06ac75-882c-423d-baca-7f464a31cd64"
+        },
+        {
+          "name": "ural",
+          "id": "208e55be-113f-425c-8a8f-fd52c16b03c4"
+        },
+        {
+          "name": "western_australia",
+          "id": "028156af-9813-42d8-a8d1-0c5428283306"
+        },
+        {
+          "name": "wildcard2",
+          "id": "680a7fc0-e897-489c-bc3c-f725a048b189"
+        }
+      ],
+      "territories": [
+        {
+          "name": "iceland",
+          "troops": 1
+        },
+        {
+          "name": "great_britain",
+          "troops": 1
+        },
+        {
+          "name": "western_europe",
+          "troops": 1
+        },
+        {
+          "name": "southern_europe",
+          "troops": 80
+        },
+        {
+          "name": "northern_europe",
+          "troops": 1
+        },
+        {
+          "name": "scandinavia",
+          "troops": 1
+        },
+        {
+          "name": "eastern_australia",
+          "troops": 1
+        },
+        {
+          "name": "ukraine",
+          "troops": 50
+        }
+      ],
+      "troopsTotal": 136,
+      "confirmed": true
+    }
+  ],
+  "turnOrder": [
+    "Guido",
+    "Mickey",
+    "Nooch",
+    "Karl"
+  ],
+  "currentPlayer": "Guido",
+  "round": 6,
+  "aerialAttack": false,
+  "aerialBridge": null,
+  "conquered": false,
+  "conqueredThisTurn": false,
+  "deck": [
+    "alaska",
+    "alberta",
+    "argentina",
+    "brazil",
+    "central_america",
+    "china",
+    "congo",
+    "east_africa",
+    "eastern_australia",
+    "eastern_united_states",
+    "egypt",
+    "great_britain",
+    "greenland",
+    "india",
+    "indonesia",
+    "irkutsk",
+    "japan",
+    "kamchatka",
+    "madagascar",
+    "middle_east",
+    "new_guinea",
+    "northern_europe",
+    "ontario",
+    "scandinavia",
+    "siberia",
+    "western_europe",
+    "western_united_states"
+  ],
+  "isInitialDeploy": false,
+  "continents": {
+    "south_america": {
+      "territories": [
+        "argentina",
+        "brazil",
+        "peru",
+        "venezuela"
+      ],
+      "bonus": 2
+    },
+    "north_america": {
+      "territories": [
+        "alaska",
+        "alberta",
+        "central_america",
+        "eastern_united_states",
+        "greenland",
+        "northwest_territory",
+        "ontario",
+        "quebec",
+        "western_united_states"
+      ],
+      "bonus": 5
+    },
+    "africa": {
+      "territories": [
+        "congo",
+        "east_africa",
+        "egypt",
+        "madagascar",
+        "north_africa",
+        "south_africa"
+      ],
+      "bonus": 3
+    },
+    "europe": {
+      "territories": [
+        "great_britain",
+        "iceland",
+        "northern_europe",
+        "scandinavia",
+        "southern_europe",
+        "ukraine",
+        "western_europe"
+      ],
+      "bonus": 5
+    },
+    "asia": {
+      "territories": [
+        "afghanistan",
+        "china",
+        "india",
+        "irkutsk",
+        "japan",
+        "kamchatka",
+        "middle_east",
+        "mongolia",
+        "siam",
+        "siberia",
+        "ural",
+        "yakutsk"
+      ],
+      "bonus": 7
+    },
+    "australia": {
+      "territories": [
+        "eastern_australia",
+        "indonesia",
+        "new_guinea",
+        "western_australia"
+      ],
+      "bonus": 2
+    }
+  },
+  "continentCollectionCounts": {
+    "south_america": 2,
+    "north_america": 2,
+    "africa": 2,
+    "europe": 2,
+    "asia": 1,
+    "australia": 2
+  },
+  "continentsSnapshot": {},
+  "cardplayConquered": false,
+  "cardEarnedViaAttack": false,
+  "cardEarnedViaCardplay": false,
+  "cardAwardedThisTurn": false,
+  "lastCardDrawn": null,
+  "defeatedPlayer": null,
+  "winner": null,
+  "attackingTerritory": null,
+  "acquiredTerritory": null,
+  "minTroopsToTransfer": 0,
+  "transferredCardCount": 0,
+  "pendingNewContinents": []
+}

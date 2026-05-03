@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=1920, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <title>RISQUE - Conquest</title>
+  <link rel="stylesheet" href="game.css">
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+  <style>
+    .conquer-player-name {
+      font-family: Arial, sans-serif;
+      font-size: 28px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      text-shadow: 2px 2px 2px rgba(0, 0, 0, 0.7);
+      position: absolute;
+      left: 1500px;
+      top: 250px;
+      transform: translateX(-50%);
+      z-index: 10;
+      pointer-events: none;
+      text-align: center;
+    }
+    .conquer-message {
+      font-family: Arial, sans-serif;
+      font-size: 48px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      text-shadow: 3px 3px 3px rgba(0, 0, 0, 0.7);
+      color: #ffffff;
+      position: absolute;
+      left: 1500px;
+      top: 409px;
+      transform: translateX(-50%);
+      z-index: 10;
+      pointer-events: none;
+      text-align: center;
+      animation: flash 0.5s ease-in-out infinite;
+    }
+    .win-message {
+      font-family: Arial, sans-serif;
+      font-size: 60px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      text-shadow: 4px 4px 4px rgba(0, 0, 0, 0.8);
+      color: #ffd700;
+      position: absolute;
+      left: 960px;
+      top: 540px;
+      transform: translate(-50%, -50%);
+      z-index: 15;
+      pointer-events: none;
+      text-align: center;
+      animation: winFlash 0.7s ease-in-out infinite;
+      background: linear-gradient(45deg, #ff0000, #00ff00, #0000ff, #ffff00);
+      background-size: 400%;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: winFlash 3s ease-in-out infinite, gradient 6s ease-in-out infinite;
+    }
+    @keyframes flash {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+    @keyframes winFlash {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(1.05); }
+    }
+    @keyframes gradient {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+    .conquer-message.static {
+      animation: none;
+      opacity: 1;
+    }
+    .conquer-button-container {
+      position: absolute;
+      top: 700px;
+      left: 1500px;
+      transform: translateX(-50%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      width: 258px;
+      z-index: 10;
+    }
+    .conquer-button {
+      width: 258px;
+      height: 36px;
+      margin: 10px 0;
+      background: #000000;
+      color: #ffffff;
+      font-family: Arial, sans-serif;
+      font-size: 16px;
+      font-weight: bold;
+      text-align: center;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      z-index: 10;
+      display: none;
+      opacity: 0;
+      transition: opacity 1s ease-in-out;
+    }
+    .conquer-button.visible {
+      display: block;
+      opacity: 1;
+    }
+    .conquer-button:hover:not(:disabled) {
+      background: #1a1a1a;
+      color: #ffffff;
+    }
+    .conquer-button:active:not(:disabled) {
+      transform: scale(0.95);
+    }
+    .conquer-button:disabled {
+      background: #000000;
+      color: #ffffff;
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    #confetti-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 5;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="canvas-wrapper" id="canvas">
+    <img id="stage-image" src="assets/images/stage.png" alt="Stage" class="stage-image"
+         onerror="window.gameUtils.showError('Failed to load stage image.')" />
+    <svg class="svg-overlay" viewBox="0 0 1920 1080"></svg>
+    <canvas id="confetti-canvas"></canvas>
+    <div class="ui-overlay" id="ui-overlay"></div>
+    <div id="error" class="error"></div>
+  </div>
+  <script src="js/core.js"></script>
+  <script>
+    console.log('[Conquer] Loaded at', new Date().toLocaleString());
+
+    function logToStorage(message, data) {
+      const timestamp = new Date().toLocaleString("en-US", { timeZone: "America/New_York" });
+      const logEntry = `[${timestamp}] [Conquer] ${message}`;
+      const logs = JSON.parse(localStorage.getItem("gameLogs") || "[]");
+      logs.push(logEntry);
+      if (data) logs.push(JSON.stringify(data, null, 2));
+      localStorage.setItem("gameLogs", JSON.stringify(logs));
+      console.log(logEntry, data || '');
+    }
+
+    function computeOwnedContinents(player) {
+      const owned = [];
+      for (const [cont, data] of Object.entries(window.gameState.continents || {})) {
+        if (data.territories && data.territories.every(t => player.territories.some(pt => pt.name === t))) {
+          owned.push(cont);
+        }
+      }
+      return owned;
+    }
+
+    function startConfetti() {
+      const canvas = document.getElementById('confetti-canvas');
+      const confetti = window.confetti.create(canvas, { resize: true });
+      const duration = 15 * 1000;
+      const animationEnd = Date.now() + duration;
+      const colors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff69b4'];
+
+      function randomInRange(min, max) {
+        return Math.random() * (max - min) + min;
+      }
+
+      function shootConfetti() {
+        const timeLeft = animationEnd - Date.now();
+        if (timeLeft <= 0) return;
+
+        confetti({
+          particleCount: 100,
+          angle: randomInRange(55, 125),
+          spread: randomInRange(50, 70),
+          origin: { x: Math.random(), y: Math.random() - 0.2 },
+          colors: colors,
+          zIndex: 5
+        });
+
+        setTimeout(shootConfetti, randomInRange(200, 400));
+      }
+
+      shootConfetti();
+      setTimeout(() => {
+        const proceedButton = document.getElementById("proceed");
+        if (proceedButton) proceedButton.classList.add("visible");
+      }, duration);
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      console.log("[Conquer] DOM loaded, initializing");
+      requestAnimationFrame(() => {
+        window.gameUtils.resizeCanvas();
+        setTimeout(window.gameUtils.resizeCanvas, 100);
+        window.gameUtils.loadGameState((gameState) => {
+          if (!gameState) {
+            console.error("[Conquer] No game state found");
+            window.gameUtils.showError("No game state found. Redirecting to launch.");
+            setTimeout(() => { window.location.href = 'index.html'; }, 2000);
+            return;
+          }
+          window.gameState = gameState;
+          const currentPlayer = gameState.players.find(p => p.name === gameState.currentPlayer);
+          const snapshot = gameState.continentsSnapshot || {};
+          const snapshotOwned = Object.keys(snapshot);
+          const currentOwned = computeOwnedContinents(currentPlayer);
+          const newContinents = currentOwned.filter(cont => !snapshotOwned.includes(cont));
+          gameState.pendingNewContinents = newContinents;
+          gameState.phase = "conquer";
+          gameState.risquePublicConCardTransferPrimary = "";
+          gameState.risquePublicConCardTransferReport = "";
+          logToStorage("Post-elimination continent update", { 
+            snapshotOwned, currentOwned, newContinents, 
+            pending: gameState.pendingNewContinents 
+          });
+          localStorage.setItem('gameState', JSON.stringify(gameState));
+          initConquerPhase();
+          window.gameUtils.renderTerritories(null, gameState);
+          window.gameUtils.renderStats(gameState);
+        });
+      });
+    });
+
+    window.addEventListener("resize", () => {
+      requestAnimationFrame(() => {
+        window.gameUtils.resizeCanvas();
+        setTimeout(window.gameUtils.resizeCanvas, 100);
+      });
+    });
+
+    document.addEventListener("fullscreenchange", () => {
+      requestAnimationFrame(() => {
+        window.gameUtils.resizeCanvas();
+        setTimeout(window.gameUtils.resizeCanvas, 100);
+      });
+    });
+
+    document.addEventListener("webkitfullscreenchange", () => {
+      requestAnimationFrame(() => {
+        window.gameUtils.resizeCanvas();
+        setTimeout(window.gameUtils.resizeCanvas, 100);
+      });
+    });
+
+    document.addEventListener("mozfullscreenchange", () => {
+      requestAnimationFrame(() => {
+        window.gameUtils.resizeCanvas();
+        setTimeout(window.gameUtils.resizeCanvas, 100);
+      });
+    });
+
+    document.addEventListener("MSFullscreenChange", () => {
+      requestAnimationFrame(() => {
+        window.gameUtils.resizeCanvas();
+        setTimeout(window.gameUtils.resizeCanvas, 100);
+      });
+    });
+
+    document.addEventListener("wheel", e => {
+      if (e.ctrlKey) e.preventDefault();
+    }, { passive: false });
+
+    document.addEventListener("keydown", e => {
+      if (e.key === "Equal" || e.key === "Minus" || (e.ctrlKey && (e.key === "+" || e.key === "-"))) {
+        e.preventDefault();
+      }
+      if (e.key === "F11") {
+        requestAnimationFrame(() => {
+          window.gameUtils.resizeCanvas();
+          setTimeout(window.gameUtils.resizeCanvas, 100);
+        });
+      }
+    });
+
+    function initConquerPhase() {
+      console.log("[Conquer] Initializing conquest phase");
+      try {
+        const uiOverlay = document.getElementById("ui-overlay");
+        if (!uiOverlay) {
+          console.error("[Conquer] UI overlay not found");
+          window.gameUtils.showError("UI overlay not found");
+          return;
+        }
+        const gameState = window.gameState;
+        if (!gameState.players || !gameState.currentPlayer || !gameState.defeatedPlayer) {
+          console.error("[Conquer] Invalid game state or no defeated player");
+          window.gameUtils.showError("Invalid game state or no defeated player. Redirecting to launch.");
+          setTimeout(() => { window.location.href = 'index.html'; }, 2000);
+          return;
+        }
+        const currentPlayer = gameState.players.find(p => p.name === gameState.currentPlayer);
+        const defeatedPlayer = gameState.players.find(p => p.name === gameState.defeatedPlayer);
+        if (!currentPlayer || !defeatedPlayer) {
+          console.error("[Conquer] Current or defeated player not found");
+          window.gameUtils.showError("Current or defeated player not found. Redirecting to launch.");
+          setTimeout(() => { window.location.href = 'index.html'; }, 2000);
+          return;
+        }
+        const playerColor = window.gameUtils.colorMap[currentPlayer.color] || "#ffffff";
+        let uiContent = '';
+        let isGameWon = gameState.turnOrder.length === 1;
+
+        if (isGameWon) {
+          gameState.winner = currentPlayer.name;
+          localStorage.setItem('gameState', JSON.stringify(gameState));
+          uiContent = `
+            <div class="conquer-player-name" style="color: ${playerColor}">${currentPlayer.name}'s Victory!</div>
+            <div class="win-message">${currentPlayer.name} WON THE GAME!</div>
+            <div class="conquer-button-container">
+              <button id="proceed" class="conquer-button">Return to Main Menu</button>
+            </div>
+          `;
+          logToStorage("Game won by player", { winner: currentPlayer.name });
+        } else {
+          uiContent = `
+            <div class="conquer-player-name" style="color: ${playerColor}">${currentPlayer.name}'s Conquer Phase</div>
+            <div class="conquer-message">${currentPlayer.name} has conquered ${defeatedPlayer.name}!</div>
+            <div class="conquer-button-container">
+              <button id="proceed" class="conquer-button">Proceed to Card Transfer</button>
+            </div>
+          `;
+          logToStorage("Conquer phase initialized", { currentPlayer: currentPlayer.name, defeatedPlayer: defeatedPlayer.name });
+        }
+
+        uiOverlay.innerHTML = uiContent;
+        uiOverlay.classList.add("visible");
+
+        const conquerMessage = document.querySelector(isGameWon ? ".win-message" : ".conquer-message");
+        const proceedButton = document.getElementById("proceed");
+        if (!conquerMessage || !proceedButton) {
+          console.error("[Conquer] Message or button not found");
+          window.gameUtils.showError("Message or button not found");
+          return;
+        }
+
+        if (isGameWon) {
+          startConfetti();
+        } else {
+          setTimeout(() => {
+            conquerMessage.classList.add("static");
+            proceedButton.classList.add("visible");
+            console.log("[Conquer] Flashing stopped, button visible");
+          }, 3000);
+        }
+
+        proceedButton.addEventListener("click", () => {
+          console.log("[Conquer] Proceed button clicked");
+          if (isGameWon) {
+            localStorage.removeItem('gameState');
+            localStorage.removeItem('gameLogs');
+            logToStorage("Navigating to index.html");
+            setTimeout(() => {
+              window.location.href = "index.html";
+            }, 2000);
+          } else {
+            gameState.phase = 'con-cardtransfer';
+            delete gameState.risquePublicEliminationBanner;
+            localStorage.setItem('gameState', JSON.stringify(gameState));
+            logToStorage("Navigating to con-cardtransfer.html");
+            uiOverlay.classList.add("fade-out");
+            setTimeout(() => {
+              window.location.href = "con-cardtransfer.html";
+            }, 2000);
+          }
+        });
+
+        proceedButton.addEventListener('keydown', e => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            console.log("[Conquer] Proceed button keydown");
+            if (isGameWon) {
+              localStorage.removeItem('gameState');
+              localStorage.removeItem('gameLogs');
+              logToStorage("Navigating to index.html");
+              setTimeout(() => {
+                window.location.href = "index.html";
+              }, 2000);
+            } else {
+              gameState.phase = 'con-cardtransfer';
+              delete gameState.risquePublicEliminationBanner;
+              localStorage.setItem('gameState', JSON.stringify(gameState));
+              logToStorage("Navigating to con-cardtransfer.html");
+              uiOverlay.classList.add("fade-out");
+              setTimeout(() => {
+                window.location.href = "con-cardtransfer.html";
+              }, 2000);
+            }
+          }
+        });
+
+        console.log("[Conquer] Conquest UI rendering completed");
+      } catch (e) {
+        console.error("[Conquer] Failed to initialize conquest phase:", e.message);
+        window.gameUtils.showError("Failed to initialize conquest phase");
+      }
+    }
+  </script>
+</body>
+</html>

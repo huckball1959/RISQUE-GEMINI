@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+  <title>RISQUE — Replay machine</title>
+  <script>
+    window.risqueDisplayIsPublic = false;
+    window.risqueDisplayMode = "host";
+    window.RISQUE_REPLAY_MACHINE = true;
+  </script>
+  <style>
+    html {
+      background-color: #000;
+      overflow: hidden;
+      height: 100%;
+    }
+  </style>
+  <link rel="stylesheet" href="game.css?v=replay-elimination-flash-2026-04-28" />
+  <style id="risque-replay-panel-width-lock">
+    /* 100vw includes the vertical scrollbar width in some browsers and causes a horizontal gutter; use % of the stage instead. */
+    html body.replay-machine-page #runtime-hud-root.runtime-hud-root--replay-machine {
+      display: block !important;
+      width: 800px !important;
+      max-width: min(800px, calc(100% - 24px)) !important;
+      min-width: 0 !important;
+      overflow-x: hidden !important;
+      box-sizing: border-box !important;
+    }
+    html body.replay-machine-page #runtime-hud-root.runtime-hud-root--replay-machine #hud-main-panel.attack-control-panel {
+      display: flex !important;
+      flex-direction: column !important;
+      width: 100% !important;
+      max-width: 100% !important;
+      min-width: 0 !important;
+      overflow-x: hidden !important;
+      box-sizing: border-box !important;
+      border: none !important;
+      outline: none !important;
+      box-shadow: none !important;
+      background: transparent !important;
+      padding: 0 !important;
+      border-radius: 0 !important;
+    }
+    html body.replay-machine-page #runtime-hud-root.runtime-hud-root--replay-machine #risque-main-panel-body {
+      min-width: 0 !important;
+      max-width: 100% !important;
+      overflow-x: hidden !important;
+      padding-top: 5px !important;
+    }
+  </style>
+</head>
+<body class="replay-machine-page risque-view-host">
+  <div class="runtime-shell">
+    <div class="replay-stage-host runtime-stage-host" aria-label="Replay map">
+      <div class="canvas-wrapper" id="canvas">
+        <svg class="svg-overlay" viewBox="0 0 1920 1080" xmlns="http://www.w3.org/2000/svg"></svg>
+      </div>
+      <div id="runtime-hud-root" class="runtime-hud-root runtime-hud-root--replay-machine" aria-label="Wayback Machine controls">
+        <div id="hud-main-panel" class="attack-control-panel unified-attack-panel">
+          <div id="risque-main-panel-body" class="risque-main-panel-body risque-replay-machine-fill">
+            <div class="risque-replay-centered-stack">
+              <div class="risque-replay-machine-brand">
+                <p class="risque-replay-machine-brand-the">THE</p>
+                <p class="risque-replay-machine-brand-main">WAYBACK MACHINE</p>
+              </div>
+              <div class="risque-replay-file-row risque-replay-file-row--primary">
+                <button type="button" id="risque-replay-folder-connect" class="risque-replay-file-pick-btn risque-replay-file-pick-btn--primary" title="Pick your flat save folder once (default C:\risque\save with scripts\RISQUE.bat — same as round autosave)">
+                  Connect saved folder
+                </button>
+                <button type="button" id="risque-replay-folder-refresh" class="risque-replay-file-pick-btn" title="Reload all *replay*.json from the connected folder">
+                  Refresh
+                </button>
+              </div>
+              <details class="risque-replay-manual-advanced">
+                <summary>Load files manually (optional)</summary>
+                <div class="risque-replay-file-row risque-replay-file-row--manual">
+                  <button type="button" id="risque-replay-file-pick" class="risque-replay-file-pick-btn">
+                    Choose replay files
+                  </button>
+                  <input
+                    type="file"
+                    id="risque-replay-file"
+                    class="risque-replay-file-input-native"
+                    accept=".json,application/json"
+                    multiple
+                    tabindex="-1"
+                    aria-label="Choose one or more RQRP replay JSON files"
+                  />
+                </div>
+              </details>
+              <p id="risque-replay-folder-hint" class="risque-replay-status-line" style="margin-top: 6px; font-size: 13px; opacity: 0.85"></p>
+              <div class="risque-replay-rounds-section" id="risque-replay-rounds-section">
+                <div class="risque-replay-file-panel-label">Segments (oldest save first — tap to jump)</div>
+                <div id="risque-replay-file-list" class="risque-replay-round-chips" role="group" aria-label="Replay segments by save time"></div>
+              </div>
+              <div class="risque-replay-round-playing-box" aria-label="Round playing">
+                <span class="risque-replay-round-playing-label">Round playing</span>
+                <span id="risque-replay-watch-round" class="risque-replay-round-playing-num">—</span>
+              </div>
+            </div>
+            <p id="risque-replay-status" class="risque-replay-status-line"></p>
+            <div class="risque-replay-transport-deck">
+              <div class="risque-replay-transport-row">
+                <button type="button" id="risque-replay-transport-play" class="risque-replay-transport-btn" disabled>PLAY</button>
+                <button type="button" id="risque-replay-transport-pause" class="risque-replay-transport-btn" disabled>PAUSE</button>
+                <button type="button" id="risque-replay-transport-stop" class="risque-replay-transport-btn" disabled>STOP</button>
+              </div>
+            </div>
+            <div class="risque-replay-tape-row risque-replay-tape-row--speed">
+              <label class="risque-replay-speed-label" for="risque-replay-speed">Playback speed</label>
+              <input type="range" id="risque-replay-speed" class="risque-replay-speed-slider" min="25" max="200" value="100" />
+            </div>
+            <p id="risque-replay-ended" class="risque-replay-ended-line" aria-live="polite"></p>
+            <div class="risque-replay-exit-row">
+              <button
+                type="button"
+                id="risque-replay-exit-overlay"
+                class="risque-replay-exit-btn"
+                title="Close this replay window and return to the public board behind it"
+              >
+                Exit replay
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="js/core.js?v=replay-login-skip-markers-2026-05-01"></script>
+  <script src="js/replay-tape.js?v=round-replay-attack-tail-2026-05-01"></script>
+  <script src="js/risque-external-urls.js"></script>
+  <script src="js/risque-save-folder-idb.js?v=autosave-folder-2026-04-30"></script>
+  <script src="js/replay-machine.js?v=flat-save-wayback-hint-2026-05-02"></script>
+</body>
+</html>

@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=1920, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no" />
+  <title>RISQUE — Celebration isolation test</title>
+  <link rel="stylesheet" href="game.css" />
+  <style>
+    html, body {
+      margin: 0;
+      height: 100%;
+      overflow: hidden;
+      background: #0f172a;
+      font-family: Arial, Helvetica, sans-serif;
+    }
+    .test-celeb-root {
+      position: relative;
+      width: 100%;
+      height: 100vh;
+      min-height: 480px;
+    }
+    /* Map fills the frame; no side panel, no control voice strip */
+    .test-celeb-root .canvas-wrapper {
+      width: 100%;
+      height: 100%;
+    }
+    .test-celeb-overlay {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 5000;
+      pointer-events: none;
+      padding: 20px 16px 28px;
+      text-align: center;
+      background: linear-gradient(to top, rgba(15, 23, 42, 0.97), rgba(15, 23, 42, 0.55), transparent);
+    }
+    .test-celeb-line {
+      margin: 0 auto;
+      max-width: 1200px;
+      font-size: clamp(1.25rem, 3.6vw, 2.75rem);
+      font-weight: 800;
+      color: #fef08a;
+      text-shadow: 0 2px 12px rgba(0, 0, 0, 0.85);
+      line-height: 1.25;
+    }
+    .test-celeb-meta {
+      margin-top: 10px;
+      font-size: 0.8rem;
+      color: #94a3b8;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <div class="test-celeb-root">
+    <div class="canvas-wrapper" id="canvas">
+      <!-- stage + svg created by core initGameView -->
+    </div>
+    <div class="test-celeb-overlay">
+      <div id="test-celeb-line" class="test-celeb-line">Loading…</div>
+      <div id="test-celeb-mode" class="test-celeb-meta"></div>
+    </div>
+  </div>
+  <div id="error" class="error" style="display:none;"></div>
+  <script src="js/core.js"></script>
+  <script src="js/test-celebration-isolation.js"></script>
+</body>
+</html>

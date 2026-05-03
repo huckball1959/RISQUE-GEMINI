@@ -1,0 +1,498 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=1920, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <title>RISQUE - Troop Transfer Phase</title>
+  <link rel="stylesheet" href="game.css">
+  <style>
+    .ui-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 10;
+      display: block;
+      opacity: 0;
+      transition: opacity 1s ease-in-out;
+    }
+    .ui-overlay.visible {
+      opacity: 1;
+    }
+    .trooptransfer-player-name {
+      font-family: Arial, sans-serif;
+      font-size: 20px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      text-shadow: 2px 2px 2px rgba(0, 0, 0, 0.7);
+      position: absolute;
+      left: 1110px;
+      top: 250px;
+      z-index: 10;
+      pointer-events: none;
+    }
+    .trooptransfer-message {
+      font-family: Arial, sans-serif;
+      font-size: 24px;
+      font-weight: bold;
+      color: #ffffff;
+      position: absolute;
+      left: 1110px;
+      top: 900px;
+      text-align: left;
+      z-index: 10;
+      pointer-events: none;
+      line-height: 1.5;
+    }
+    .trooptransfer-button {
+      width: 258px;
+      height: 36px;
+      margin: 10px 0;
+      background: #000000;
+      color: #ffffff;
+      font-family: Arial, sans-serif;
+      font-size: 16px;
+      font-weight: bold;
+      text-align: center;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      z-index: 10;
+      position: absolute;
+      top: 309px;
+      left: 1105px;
+      opacity: 0;
+      transition: opacity 1s ease-in-out;
+    }
+    .trooptransfer-button.visible {
+      opacity: 1;
+    }
+    .trooptransfer-button:hover:not(:disabled) {
+      background: #1a1a1a;
+    }
+    .trooptransfer-button:active:not(:disabled) {
+      transform: scale(0.95);
+    }
+    .trooptransfer-button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .popup {
+      position: absolute;
+      left: 1105px;
+      top: 620px;
+      width: 218px;
+      box-sizing: border-box;
+      background: #fff;
+      border: 2px solid #000;
+      padding: 20px;
+      z-index: 11;
+      display: none;
+      font-family: Arial, sans-serif;
+      font-size: 20px;
+    }
+    .popup-message {
+      margin-bottom: 10px;
+    }
+    .popup-input {
+      width: 100%;
+      margin-bottom: 10px;
+      display: none;
+    }
+    .popup-button {
+      margin-right: 10px;
+      background: #280b0b;
+      color: #fff;
+      border: none;
+      border-radius: 5px;
+      padding: 8px 16px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    .popup-button:hover:not(:disabled) {
+      background: #3c1212;
+    }
+  </style>
+</head>
+<body>
+  <div class="canvas-wrapper" id="canvas">
+    <img id="stage-image" src="assets/images/stage.png" alt="Stage" class="stage-image"
+         onerror="window.gameUtils.showError('Failed to load stage image.')" />
+    <svg class="svg-overlay" viewBox="0 0 1920 1080"></svg>
+    <div class="ui-overlay" id="ui-overlay"></div>
+    <div id="error" class="error"></div>
+  </div>
+  <script src="js/core.js"></script>
+  <script>
+    console.log('[TroopTransfer] Loaded at', new Date().toLocaleString());
+    let currentPlayer = null;
+    let transferCompleted = false;
+    /** Combat already moved the minimum onto the capture; this page only moves *additional* troops (min 1 if any). */
+    function maxAdditionalTroopsMovable(gs) {
+      if (!gs || !gs.attackingTerritory) return 0;
+      var t = Number(gs.attackingTerritory.troops) || 0;
+      return Math.max(0, t - 1);
+    }
+
+    function logToStorage(message, data) {
+      const timestamp = new Date().toLocaleString("en-US", { timeZone: "America/New_York" });
+      const logEntry = `[${timestamp}] [TroopTransfer] ${message}`;
+      const logs = JSON.parse(localStorage.getItem("gameLogs") || "[]");
+      logs.push(logEntry);
+      if (data) logs.push(JSON.stringify(data, null, 2));
+      localStorage.setItem("gameLogs", JSON.stringify(logs));
+      console.log(logEntry, data || '');
+    }
+
+    function validateGameState() {
+      const requiredFields = ["phase", "players", "turnOrder", "currentPlayer", "round"];
+      const isValid = requiredFields.every(field => window.gameState.hasOwnProperty(field)) && 
+                     window.gameState.phase === "con-transfertroops" && 
+                     window.gameState.players.length >= 1;
+      if (!isValid) {
+        logToStorage('Invalid game state', window.gameState);
+        window.gameUtils.showError('Invalid game state. Redirecting to main menu.');
+        setTimeout(() => { window.location.href = 'index.html'; }, 2000);
+        return false;
+      }
+      currentPlayer = window.gameState.players.find(p => p.name === window.gameState.currentPlayer);
+      if (!currentPlayer) {
+        logToStorage('Current player not found');
+        window.gameUtils.showError('Current player not found. Redirecting to main menu.');
+        setTimeout(() => { window.location.href = 'index.html'; }, 2000);
+        return false;
+      }
+      /* Deploy updates territory troop counts on the player object; gameState snapshots may be stale. */
+      const gs = window.gameState;
+      if (gs.attackingTerritory && gs.attackingTerritory.name) {
+        const atLive = currentPlayer.territories.find(t => t.name === gs.attackingTerritory.name);
+        if (atLive) {
+          gs.attackingTerritory = { name: atLive.name, troops: Number(atLive.troops) || 0 };
+        }
+      }
+      if (gs.acquiredTerritory && gs.acquiredTerritory.name) {
+        const acLive = currentPlayer.territories.find(t => t.name === gs.acquiredTerritory.name);
+        if (acLive) {
+          gs.acquiredTerritory = { name: acLive.name, troops: Number(acLive.troops) || 0 };
+        }
+      }
+      if (window.gameState.conqueredThisTurn === undefined) {
+        logToStorage('conqueredThisTurn undefined, defaulting to false');
+        window.gameState.conqueredThisTurn = false;
+      }
+      if (!window.gameState.conqueredThisTurn) {
+        logToStorage('No conquest this turn, redirecting to runtime cardplay');
+        window.gameUtils.showError('No troops to transfer. Redirecting to card play.');
+        setTimeout(() => { window.location.href = 'game.html?phase=cardplay'; }, 2000);
+        return false;
+      }
+      if (!window.gameState.attackingTerritory || !window.gameState.acquiredTerritory) {
+        logToStorage('Missing attack data', {
+          attackingTerritory: window.gameState.attackingTerritory,
+          acquiredTerritory: window.gameState.acquiredTerritory
+        });
+        window.gameUtils.showError('Missing attack data. Redirecting to launch.');
+        setTimeout(() => { window.location.href = 'index.html'; }, 2000);
+        return false;
+      }
+      if (!currentPlayer.territories.some(t => t.name === window.gameState.attackingTerritory.name) ||
+          !currentPlayer.territories.some(t => t.name === window.gameState.acquiredTerritory.name)) {
+        logToStorage('Invalid territory ownership', {
+          attackingTerritory: window.gameState.attackingTerritory?.name,
+          acquiredTerritory: window.gameState.acquiredTerritory?.name,
+          player: currentPlayer.name
+        });
+        window.gameUtils.showError('Invalid territory ownership. Redirecting to launch.');
+        setTimeout(() => { window.location.href = 'index.html'; }, 2000);
+        return false;
+      }
+      const adjacencyMap = window.gameUtils.getAdjacencyMap ? window.gameUtils.getAdjacencyMap() : {};
+      if (!adjacencyMap[window.gameState.attackingTerritory.name]?.includes(window.gameState.acquiredTerritory.name)) {
+        logToStorage('Territories not adjacent', {
+          attackingTerritory: window.gameState.attackingTerritory.name,
+          acquiredTerritory: window.gameState.acquiredTerritory.name
+        });
+        window.gameUtils.showError('Territories not adjacent. Redirecting to launch.');
+        setTimeout(() => { window.location.href = 'index.html'; }, 2000);
+        return false;
+      }
+      var maxAdd = maxAdditionalTroopsMovable(window.gameState);
+      if (maxAdd < 1) {
+        logToStorage('No optional troops to move (minimum already placed or only garrison left); skipping transfer UI', {
+          attackingTerritory: window.gameState.attackingTerritory && window.gameState.attackingTerritory.name,
+          troops: window.gameState.attackingTerritory && window.gameState.attackingTerritory.troops
+        });
+        transferCompleted = true;
+      }
+      return true;
+    }
+
+    function initTroopTransfer() {
+      let uiOverlay = document.getElementById("ui-overlay");
+      if (!uiOverlay) {
+        logToStorage('UI overlay not found, creating');
+        uiOverlay = document.createElement('div');
+        uiOverlay.className = 'ui-overlay';
+        uiOverlay.id = 'ui-overlay';
+        const canvasWrapper = document.getElementById('canvas');
+        if (canvasWrapper) {
+          canvasWrapper.appendChild(uiOverlay);
+        } else {
+          logToStorage('Canvas wrapper not found');
+          window.gameUtils.showError('Canvas wrapper not found. Redirecting to launch.');
+          setTimeout(() => { window.location.href = 'index.html'; }, 2000);
+          return;
+        }
+      }
+      if (!validateGameState()) return;
+      const playerColor = window.gameUtils.colorMap[currentPlayer.color] || "#ffffff";
+      const attackingTerritoryName = window.gameState.attackingTerritory.name.replace(/_/g, ' ').toUpperCase();
+      const acquiredTerritoryName = window.gameState.acquiredTerritory.name.replace(/_/g, ' ').toUpperCase();
+      uiOverlay.innerHTML = `
+        <div class="trooptransfer-player-name" style="color: ${playerColor}">${currentPlayer.name}'s Troop Transfer</div>
+        <div class="trooptransfer-message">Transfer troops from ${attackingTerritoryName} to ${acquiredTerritoryName}</div>
+        <button id="transfer-troops" class="trooptransfer-button visible">Transfer Troops</button>
+        <button id="proceed" class="trooptransfer-button visible" disabled>Proceed</button>
+      `;
+      uiOverlay.classList.add("visible");
+      uiOverlay.style.display = 'block';
+      logToStorage('UI overlay rendered', { player: currentPlayer.name, attackingTerritory: attackingTerritoryName, acquiredTerritory: acquiredTerritoryName });
+      const transferButton = document.getElementById('transfer-troops');
+      const proceedButton = document.getElementById('proceed');
+      if (transferCompleted && proceedButton) {
+        proceedButton.disabled = false;
+        if (transferButton) transferButton.disabled = true;
+      }
+      if (transferButton) {
+        transferButton.addEventListener('click', handleTroopTransfer);
+        logToStorage('Transfer Troops button initialized');
+      } else {
+        logToStorage('Transfer Troops button not found');
+        window.gameUtils.showError('Transfer Troops button not found');
+      }
+      if (proceedButton) {
+        proceedButton.addEventListener('click', handleProceed);
+        logToStorage('Proceed button initialized');
+      } else {
+        logToStorage('Proceed button not found');
+        window.gameUtils.showError('Proceed button not found');
+      }
+      requestAnimationFrame(() => {
+        window.gameUtils.resizeCanvas();
+        window.gameUtils.initGameView();
+        window.gameUtils.renderTerritories(null, window.gameState);
+        window.gameUtils.renderStats(window.gameState);
+        logToStorage('Game view rendered');
+      });
+    }
+
+    function handleTroopTransfer() {
+      if (transferCompleted) {
+        window.gameUtils.showError('Troop transfer already completed.');
+        logToStorage('Troop transfer attempted after completion');
+        return;
+      }
+      const maxTroops = maxAdditionalTroopsMovable(window.gameState);
+      const minTroops = 1;
+      if (maxTroops < minTroops) {
+        transferCompleted = true;
+        const pb = document.getElementById('proceed');
+        const tb = document.getElementById('transfer-troops');
+        if (pb) pb.disabled = false;
+        if (tb) tb.disabled = true;
+        window.gameUtils.showError('');
+        logToStorage('No additional troops to move; use Proceed', { troops: window.gameState.attackingTerritory.troops });
+        return;
+      }
+      showPopup(`Transfer troops from ${window.gameState.attackingTerritory.name.replace(/_/g, ' ').toUpperCase()} to ${window.gameState.acquiredTerritory.name.replace(/_/g, ' ').toUpperCase()} (min ${minTroops}, max ${maxTroops})`, [
+        {
+          label: 'Confirm',
+          onClick: () => {
+            const troopsInput = document.getElementById('popup-input');
+            const troops = parseInt(troopsInput.value);
+            if (isNaN(troops) || troops < minTroops || troops > maxTroops) {
+              showPopup(
+                `Enter troops (min ${minTroops}, max ${maxTroops})`,
+                [
+                  { label: 'Confirm', onClick: () => {} },
+                  { label: 'Cancel', onClick: () => { document.getElementById('popup').style.display = 'none'; } }
+                ],
+                true,
+                `Please enter a number between ${minTroops} and ${maxTroops}.`
+              );
+              logToStorage('Invalid troop input', { troops, minTroops, maxTroops });
+              return;
+            }
+            const attackerTerritory = currentPlayer.territories.find(t => t.name === window.gameState.attackingTerritory.name);
+            const acquiredTerritory = currentPlayer.territories.find(t => t.name === window.gameState.acquiredTerritory.name);
+            attackerTerritory.troops -= troops;
+            acquiredTerritory.troops += troops;
+            currentPlayer.troopsTotal = currentPlayer.territories.reduce((sum, t) => sum + t.troops, 0);
+            transferCompleted = true;
+            logToStorage('Troops transferred', {
+              from: attackerTerritory.name,
+              to: acquiredTerritory.name,
+              troops: troops,
+              fromTroops: attackerTerritory.troops,
+              toTroops: acquiredTerritory.troops,
+              troopsTotal: currentPlayer.troopsTotal
+            });
+            localStorage.setItem('gameState', JSON.stringify(window.gameState));
+            window.gameUtils.renderTerritories(null, window.gameState);
+            document.getElementById('popup').style.display = 'none';
+            document.getElementById('transfer-troops').disabled = true;
+            document.getElementById('proceed').disabled = false;
+            logToStorage('Transfer completed, Proceed button enabled');
+          }
+        },
+        { label: 'Cancel', onClick: () => { document.getElementById('popup').style.display = 'none'; } }
+      ], true);
+    }
+
+    function showPopup(message, buttons, showInput = false, error = '') {
+      let popup = document.getElementById('popup');
+      if (!popup) {
+        popup = document.createElement('div');
+        popup.id = 'popup';
+        popup.className = 'popup';
+        popup.innerHTML = `
+          <div id="popup-message" class="popup-message"></div>
+          <input id="popup-input" type="number" class="popup-input">
+          <button id="confirm-button" class="popup-button">Confirm</button>
+          <button id="cancel-button" class="popup-button">Cancel</button>
+        `;
+        document.getElementById('ui-overlay').appendChild(popup);
+      }
+      document.getElementById('popup-message').textContent = message;
+      const popupInput = document.getElementById('popup-input');
+      popupInput.style.display = showInput ? 'block' : 'none';
+      popupInput.value = showInput ? '1' : '';
+      if (error) {
+        const errorDiv = document.createElement('div');
+        errorDiv.textContent = error;
+        document.getElementById('popup-message').appendChild(errorDiv);
+      }
+      document.getElementById('confirm-button').textContent = buttons[0]?.label || 'Confirm';
+      document.getElementById('cancel-button').textContent = buttons[1]?.label || 'Cancel';
+      document.getElementById('confirm-button').onclick = buttons[0]?.onClick || (() => { popup.style.display = 'none'; });
+      document.getElementById('cancel-button').onclick = buttons[1]?.onClick || (() => { popup.style.display = 'none'; });
+      popup.style.display = 'block';
+      logToStorage(`Popup shown: ${message}`, { error });
+    }
+
+    function handleProceed() {
+      var gs = window.gameState;
+      var proceedTo = gs.risqueConquestTransferProceedTo;
+      if (proceedTo === 'attack') {
+        if (!transferCompleted && gs.conqueredThisTurn) {
+          window.gameUtils.showError('Complete troop transfer first.');
+          logToStorage('Proceed attempted before transfer (finale → attack)');
+          return;
+        }
+        gs.phase = 'attack';
+        gs.attackPhase = 'attack';
+        gs.attackingTerritory = null;
+        gs.acquiredTerritory = null;
+        gs.minTroopsToTransfer = 0;
+        gs.conqueredThisTurn = false;
+        delete gs.risqueConquestTransferProceedTo;
+        delete gs.risqueConquestChainActive;
+        try {
+          localStorage.setItem('gameState', JSON.stringify(gs));
+        } catch (eSave) {
+          logToStorage('Save before attack failed', { error: eSave.message || String(eSave) });
+        }
+        logToStorage('Conquest troop transfer finished; navigating to attack', { phase: gs.phase });
+        document.getElementById('ui-overlay').classList.add('fade-out');
+        setTimeout(function () {
+          window.location.href = 'game.html?phase=attack';
+        }, 2000);
+        return;
+      }
+      if (!transferCompleted && gs.conqueredThisTurn) {
+        window.gameUtils.showError('Complete troop transfer first.');
+        logToStorage('Proceed attempted before transfer');
+        return;
+      }
+      gs.phase = 'con-cardplay';
+      gs.attackingTerritory = null;
+      gs.acquiredTerritory = null;
+      gs.minTroopsToTransfer = 0;
+      gs.conqueredThisTurn = false;
+      delete gs.risqueConquestTransferProceedTo;
+      localStorage.setItem('gameState', JSON.stringify(gs));
+      logToStorage('Navigating to runtime cardplay', { phase: gs.phase });
+      document.getElementById('ui-overlay').classList.add('fade-out');
+      setTimeout(function () {
+        window.location.href = 'game.html?phase=cardplay';
+      }, 2000);
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      console.log('[TroopTransfer] DOM loaded, initializing');
+      window.gameUtils.loadGameState((gameState) => {
+        if (!gameState) {
+          logToStorage('No game state found');
+          window.gameUtils.showError('No game state found. Redirecting to launch.');
+          setTimeout(() => { window.location.href = 'index.html'; }, 2000);
+          return;
+        }
+        window.gameState = gameState;
+        logToStorage('Game state loaded', {
+          phase: gameState.phase,
+          currentPlayer: gameState.currentPlayer,
+          attackingTerritory: gameState.attackingTerritory,
+          acquiredTerritory: gameState.acquiredTerritory,
+          conqueredThisTurn: gameState.conqueredThisTurn
+        });
+        initTroopTransfer();
+      });
+      window.addEventListener('resize', () => requestAnimationFrame(() => window.gameUtils.resizeCanvas()));
+    });
+  </script>
+</body>
+</html>

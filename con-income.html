@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=1920, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <title>RISQUE - Conquest Income</title>
+  <link rel="stylesheet" href="game.css">
+  <style>
+    .income-player-name {
+      font-family: Arial, sans-serif;
+      font-size: 20px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      text-shadow: 2px 2px 2px rgba(0, 0, 0, 0.7);
+      position: absolute;
+      left: 1110px;
+      top: 250px;
+      z-index: 10;
+      pointer-events: none;
+    }
+    .income-table-container {
+      position: absolute;
+      top: 309px;
+      left: 1120px;
+      width: 760px;
+      z-index: 10;
+      visibility: visible;
+      opacity: 0;
+      transition: opacity 1s ease-in-out;
+    }
+    .income-table-container.visible {
+      opacity: 1;
+    }
+    .income-table {
+      border-collapse: collapse;
+      width: 100%;
+    }
+    .income-table th, .income-table td {
+      border: 2px solid #000000;
+      padding: 8px;
+      text-align: center;
+      font-family: Arial, sans-serif;
+      font-size: 11.1375px;
+      font-weight: bold;
+    }
+    .income-table th {
+      background-color: #cccccc;
+    }
+    .income-table td {
+      background-color: #ffffff;
+    }
+    .income-button {
+      width: 258px;
+      height: 36px;
+      margin: 10px auto 0;
+      position: relative;
+      background: #000000;
+      color: #ffffff;
+      font-family: Arial, sans-serif;
+      font-size: 16px;
+      font-weight: bold;
+      text-align: center;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      z-index: 10;
+      visibility: visible;
+      opacity: 0;
+      transition: opacity 1s ease-in-out;
+      display: block;
+    }
+    .income-button.visible {
+      opacity: 1;
+    }
+    .income-button:hover:not(:disabled) {
+      background: #1a1a1a;
+      color: #ffffff;
+    }
+    .income-button:active:not(:disabled) {
+      transform: scale(0.95);
+    }
+    .income-button:disabled {
+      background: #000000;
+      color: #ffffff;
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+  </style>
+</head>
+<body>
+  <div class="canvas-wrapper" id="canvas">
+    <svg class="svg-overlay" viewBox="0 0 1920 1080"></svg>
+    <div class="ui-overlay" id="ui-overlay"></div>
+    <div id="error" class="error"></div>
+  </div>
+  <script type="text/javascript">
+    var gk_isXlsx = false;
+    var gk_xlsxFileLookup = {};
+    var gk_fileData = {};
+    function filledCell(cell) {
+      return cell !== '' && cell != null;
+    }
+    function loadFileData(filename) {
+      if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+        try {
+          var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+          var firstSheetName = workbook.SheetNames[0];
+          var worksheet = workbook.Sheets[firstSheetName];
+          var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+          var filteredData = jsonData.filter(row => row.some(filledCell));
+          var headerRowIndex = filteredData.findIndex((row, index) =>
+            row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+          );
+          if (headerRowIndex === -1 || headerRowIndex > 25) {
+            headerRowIndex = 0;
+          }
+          var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex));
+          csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+          return csv;
+        } catch (e) {
+          console.error(e);
+          return "";
+        }
+      }
+      return gk_fileData[filename] || "";
+    }
+  </script>
+  <script src="js/core.js"></script>
+  <script>
+    console.log("[Income] Loaded at", new Date().toLocaleString());
+
+    function logToStorage(message, data) {
+      const timestamp = new Date().toLocaleString("en-US", { timeZone: "America/New_York" });
+      const logEntry = `[${timestamp}] [Income] ${message}`;
+      const logs = JSON.parse(localStorage.getItem("gameLogs") || "[]");
+      logs.push(logEntry);
+      if (data) logs.push(JSON.stringify(data, null, 2));
+      localStorage.setItem("gameLogs", JSON.stringify(logs));
+      console.log(logEntry, data || '');
+    }
+
+    function computeOwnedContinents(player) {
+      const owned = [];
+      for (const [cont, data] of Object.entries(window.gameState.continents || {})) {
+        if (data.territories && data.territories.every(t => player.territories.some(pt => pt.name === t))) {
+          owned.push(cont);
+        }
+      }
+      return owned;
+    }
+
+    function getEscalatedBonus(continentKey, collections) {
+      const base = window.gameState.continents[continentKey]?.bonus || 0;
+      return base * (collections + 1);
+    }
+
+    function incomeInit() {
+      console.log("[Income] Initializing income phase");
+      try {
+        const uiOverlay = document.getElementById("ui-overlay");
+        if (!uiOverlay) {
+          console.error("[Income] UI overlay not found");
+          window.gameUtils.showError("UI overlay not found");
+          return;
+        }
+        const gameState = window.gameState;
+        if (!gameState?.players || !gameState.currentPlayer || !gameState.continentCollectionCounts) {
+          console.error("[Income] Invalid game state");
+          window.gameUtils.showError("Invalid game state. Redirecting to risque.");
+          setTimeout(() => { window.location.href = 'game.html?phase=login&loginLegacyNext=game.html%3Fphase%3DplayerSelect%26selectKind%3DfirstCard&loginLoadRedirect=game.html%3Fphase%3DprivacyGate%26next%3Dgame.html%253Fphase%253Dcardplay%2526legacyNext%253Dincome.html'; }, 2000);
+          return;
+        }
+        const currentPlayer = gameState.players.find(p => p.name === gameState.currentPlayer);
+        if (!currentPlayer) {
+          console.error("[Income] Current player not found");
+          window.gameUtils.showError("Current player not found. Redirecting to risque.");
+          setTimeout(() => { window.location.href = 'game.html?phase=login&loginLegacyNext=game.html%3Fphase%3DplayerSelect%26selectKind%3DfirstCard&loginLoadRedirect=game.html%3Fphase%3DprivacyGate%26next%3Dgame.html%253Fphase%253Dcardplay%2526legacyNext%253Dincome.html'; }, 2000);
+          return;
+        }
+        currentPlayer.bankValue = currentPlayer.bankValue || 0;
+        const playerColor = window.gameUtils.colorMap[currentPlayer.color] || "#ffffff";
+        const bookCount = currentPlayer.bookValue || 0;
+        const bookBonus = bookCount * 10;
+        let continentBonus = 0;
+        const ownedContinents = computeOwnedContinents(currentPlayer);
+        const snapshot = gameState.continentsSnapshot || {};
+        const snapshotOwned = Object.keys(snapshot).filter(key => snapshot[key]);
+        const pendingNew = gameState.pendingNewContinents || [];
+        logToStorage("Income continent trace", { 
+          snapshotOwned, 
+          ownedContinents, 
+          pendingNew, 
+          collectionCounts: gameState.continentCollectionCounts 
+        });
+        let continentDetails = '';
+        // Only calculate bonuses for NEW continents (pendingNew)
+        pendingNew.forEach(key => {
+          const collectionCount = gameState.continentCollectionCounts[key] || 0;
+          const bonus = getEscalatedBonus(key, collectionCount);
+          continentBonus += bonus;
+          continentDetails += `${key.toUpperCase()}(collections=${collectionCount})(New)=${bonus}, `;
+          logToStorage(`New continent bonus: ${key}`, { collections: collectionCount, bonus });
+        });
+        continentDetails = continentDetails.slice(0, -2) || 'NONE';
+        const total = bookBonus + continentBonus;
+        let incomeContent = `
+          <div class="income-player-name" style="color: ${playerColor}">${currentPlayer.name}'s Income</div>
+          <div class="income-table-container visible">
+            <table class="income-table">
+              <thead>
+                <tr>
+                  <th style="width: ${200 * (window.innerWidth / 1920)}px">Label</th>
+                  <th style="width: ${385.3203125 * (window.innerWidth / 1920)}px">Details</th>
+                  <th style="width: ${200 * (window.innerWidth / 1920)}px">Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>BOOKS</td>
+                  <td>BOOK COUNT: ${bookCount === 0 ? 'NONE' : bookCount}</td>
+                  <td>BOOK: ${bookBonus}</td>
+                </tr>
+                <tr>
+                  <td>CONTINENTS</td>
+                  <td>${continentDetails}</td>
+                  <td>CONTINENTS: ${continentBonus}</td>
+                </tr>
+                <tr>
+                  <td></td>
+                  <td>TOTAL</td>
+                  <td>${total}</td>
+                </tr>
+              </tbody>
+            </table>
+            <button class="income-button visible">Confirm</button>
+          </div>
+        `;
+        uiOverlay.innerHTML = incomeContent;
+        uiOverlay.classList.add("visible");
+        logToStorage("UI overlay updated with incomeContent", { bookBonus, continentBonus, total, continentDetails });
+        const confirmButton = document.querySelector(".income-button");
+        if (confirmButton) {
+          logToStorage("Confirm button found, adding event listener");
+          const handleConfirm = () => {
+            logToStorage("Confirm button clicked");
+            logToStorage("Game state before update", { phase: gameState.phase, bankValue: currentPlayer.bankValue, troopsTotal: currentPlayer.troopsTotal });
+            const terrTroopSum = currentPlayer.territories.reduce((sum, t) => sum + (Number(t.troops) || 0), 0);
+            currentPlayer.bankValue = total;
+            currentPlayer.troopsTotal = terrTroopSum + total;
+            currentPlayer.bookValue = 0;
+            // Increment counts for ALL owned continents (for future escalations)
+            ownedContinents.forEach(key => {
+              gameState.continentCollectionCounts[key] = (gameState.continentCollectionCounts[key] || 0) + 1;
+            });
+            logToStorage("Incremented continent counts", { updatedCounts: gameState.continentCollectionCounts });
+            gameState.pendingNewContinents = [];
+            if (gameState.cardplayConquered) {
+              const deck = gameState.deck;
+              if (deck.length > 0) {
+                const card = deck.shift();
+                currentPlayer.cards.push(card);
+                currentPlayer.cardCount = currentPlayer.cards.length;
+                logToStorage("Card awarded for conquest", { player: currentPlayer.name, card });
+              }
+            }
+            uiOverlay.classList.add("fade-out");
+            if (currentPlayer.bankValue <= 0) {
+              gameState.phase = 'attack';
+              localStorage.setItem('gameState', JSON.stringify(gameState));
+              logToStorage("Game state updated (zero income, skip deploy)", { bankValue: currentPlayer.bankValue, troopsTotal: currentPlayer.troopsTotal, cardCount: currentPlayer.cardCount, phase: gameState.phase });
+              window.gameUtils.showError("No troops available to deploy. Returning to attack.");
+              setTimeout(() => { window.location.href = 'game.html?phase=attack'; }, 2000);
+            } else {
+              if (gameState.phase === 'con-deploy') {
+                logToStorage("Warning: Phase already set to con-deploy, possible double-click", { phase: gameState.phase });
+              }
+              gameState.phase = 'con-deploy';
+              localStorage.setItem('gameState', JSON.stringify(gameState));
+              logToStorage("Game state updated", { bankValue: currentPlayer.bankValue, troopsTotal: currentPlayer.troopsTotal, cardCount: currentPlayer.cardCount, phase: gameState.phase });
+              logToStorage("Navigating to con-deploy.html", { cardplayConquered: gameState.cardplayConquered });
+              setTimeout(() => { window.location.href = 'con-deploy.html'; }, 2000);
+            }
+          };
+          confirmButton.addEventListener("click", handleConfirm);
+          confirmButton.addEventListener("keydown", e => {
+            if (e.key === "Enter" || e.key === " ") {
+              handleConfirm();
+            }
+          });
+        } else {
+          console.error("[Income] Confirm button not found");
+          window.gameUtils.showError("Confirm button not found");
+        }
+        logToStorage("Income UI rendering completed");
+        window.gameUtils.initGameView();
+        window.gameUtils.renderTerritories(null, gameState);
+        window.gameUtils.renderStats(gameState);
+      } catch (e) {
+        console.error("[Income] Failed to initialize income phase:", e.message);
+        window.gameUtils.showError("Failed to initialize income phase");
+        setTimeout(() => { window.location.href = 'game.html?phase=login&loginLegacyNext=game.html%3Fphase%3DplayerSelect%26selectKind%3DfirstCard&loginLoadRedirect=game.html%3Fphase%3DprivacyGate%26next%3Dgame.html%253Fphase%253Dcardplay%2526legacyNext%253Dincome.html'; }, 2000);
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      console.log("[Income] DOM loaded, initializing");
+      window.gameUtils.loadGameState((gameState) => {
+        if (!gameState) {
+          logToStorage("No game state found");
+          window.gameUtils.showError("No game state found. Redirecting to risque.");
+          setTimeout(() => { window.location.href = 'game.html?phase=login&loginLegacyNext=game.html%3Fphase%3DplayerSelect%26selectKind%3DfirstCard&loginLoadRedirect=game.html%3Fphase%3DprivacyGate%26next%3Dgame.html%253Fphase%253Dcardplay%2526legacyNext%253Dincome.html'; }, 2000);
+          return;
+        }
+        window.gameState = gameState;
+        logToStorage('Initial continentCollectionCounts', { counts: gameState.continentCollectionCounts });
+        logToStorage('Player card counts on load', {
+          players: gameState.players.map(p => ({ name: p.name, cardCount: p.cardCount, cards: p.cards }))
+        });
+        incomeInit();
+      });
+      window.addEventListener("resize", () => {
+        requestAnimationFrame(() => {
+          window.gameUtils.resizeCanvas();
+        });
+      });
+      document.addEventListener("wheel", e => {
+        if (e.ctrlKey) e.preventDefault();
+      }, { passive: false });
+      document.addEventListener("keydown", e => {
+        if (e.key === "Equal" || e.key === "Minus" || (e.ctrlKey && (e.key === "+" || e.key === "-"))) {
+          e.preventDefault();
+        }
+      });
+    });
+  </script>
+</body>
+</html>

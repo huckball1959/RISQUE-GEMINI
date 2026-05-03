@@ -1,0 +1,90 @@
+{
+  "format": "risque-replay-v1",
+  "replayScope": "session",
+  "replayRound": 5,
+  "tapeFormatVersion": 2,
+  "savedAt": 1735689600000,
+  "round": 5,
+  "phase": "cardplay",
+  "currentPlayer": "Guido",
+  "sessionKey": "mock-fixture-session",
+  "playerColors": {
+    "guido": "blue",
+    "rival": "red"
+  },
+  "tape": {
+    "v": 2,
+    "openingRecorded": true,
+    "hasDealFrames": true,
+    "events": [
+      {
+        "type": "init",
+        "round": 1,
+        "board": {
+          "Alaska": { "owner": "Guido", "troops": 3 },
+          "Ontario": { "owner": "Rival", "troops": 3 }
+        },
+        "playerColors": { "guido": "blue", "rival": "red" }
+      },
+      {
+        "type": "board",
+        "segment": "deal",
+        "round": 1,
+        "board": {
+          "Alaska": { "owner": "Guido", "troops": 3 },
+          "Ontario": { "owner": "Rival", "troops": 3 }
+        }
+      },
+      {
+        "type": "board",
+        "segment": "battle",
+        "round": 1,
+        "recordedForPlayer": "Guido",
+        "board": {
+          "Alaska": { "owner": "Guido", "troops": 4 },
+          "Ontario": { "owner": "Rival", "troops": 2 }
+        }
+      },
+      {
+        "type": "board",
+        "segment": "battle",
+        "round": 2,
+        "recordedForPlayer": "Rival",
+        "board": {
+          "Alaska": { "owner": "Guido", "troops": 3 },
+          "Ontario": { "owner": "Rival", "troops": 5 }
+        }
+      },
+      {
+        "type": "board",
+        "segment": "battle",
+        "round": 3,
+        "recordedForPlayer": "Guido",
+        "board": {
+          "Alaska": { "owner": "Guido", "troops": 6 },
+          "Ontario": { "owner": "Rival", "troops": 4 }
+        }
+      },
+      {
+        "type": "board",
+        "segment": "battle",
+        "round": 4,
+        "recordedForPlayer": "Rival",
+        "board": {
+          "Alaska": { "owner": "Guido", "troops": 5 },
+          "Ontario": { "owner": "Rival", "troops": 6 }
+        }
+      },
+      {
+        "type": "board",
+        "segment": "battle",
+        "round": 5,
+        "recordedForPlayer": "Guido",
+        "board": {
+          "Alaska": { "owner": "Guido", "troops": 8 },
+          "Ontario": { "owner": "Rival", "troops": 5 }
+        }
+      }
+    ]
+  }
+}

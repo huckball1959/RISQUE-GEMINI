@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RISQUE — Game manual</title>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      line-height: 1.55;
+      color: #e2e8f0;
+      background: #0f172a;
+      padding: 0 0 48px;
+    }
+    .doc-nav {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px 20px;
+      align-items: center;
+      padding: 14px 24px;
+      background: #1e293b;
+      border-bottom: 1px solid #334155;
+      font-family: Arial, sans-serif;
+      font-size: 14px;
+    }
+    .doc-nav a {
+      color: #38bdf8;
+      text-decoration: none;
+      font-weight: 700;
+    }
+    .doc-nav a:hover { text-decoration: underline; }
+    main {
+      max-width: 44rem;
+      margin: 0 auto;
+      padding: 28px 20px 0;
+    }
+    h1 {
+      font-size: 1.85rem;
+      margin: 0 0 8px;
+      font-family: Arial, sans-serif;
+    }
+    .subtitle { color: #94a3b8; font-size: 15px; margin-bottom: 28px; }
+    h2 {
+      font-size: 1.25rem;
+      margin: 28px 0 12px;
+      font-family: Arial, sans-serif;
+      color: #f1f5f9;
+      border-bottom: 1px solid #334155;
+      padding-bottom: 6px;
+    }
+    h3 { font-size: 1.05rem; margin: 18px 0 8px; color: #cbd5e1; }
+    p, li { margin: 0 0 10px; }
+    ul, ol { padding-left: 1.35rem; margin: 0 0 14px; }
+    li { margin-bottom: 6px; }
+    .note {
+      background: #1e293b;
+      border-left: 4px solid #38bdf8;
+      padding: 12px 14px;
+      margin: 16px 0;
+      font-size: 15px;
+    }
+    code { background: #1e293b; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+  </style>
+</head>
+<body>
+  <nav class="doc-nav" aria-label="Document navigation">
+    <a href="../game.html?phase=login">Return to login</a>
+    <a href="manual.html" aria-current="page">Game manual</a>
+    <a href="manual.html#login">Login screen</a>
+    <a href="help.html">Help</a>
+  </nav>
+  <main>
+    <h1>RISQUE game manual</h1>
+    <p class="subtitle">Classic Risk-style world conquest — how to play in this digital version.</p>
+
+    <h2>1. Goal</h2>
+    <p>Be the last player with any territories on the map. Eliminate opponents by capturing all of their territories.</p>
+
+    <h2>2. What you need</h2>
+    <ul>
+      <li>The world map divided into <strong>territories</strong> grouped into <strong>continents</strong>.</li>
+      <li><strong>Armies</strong> (the numbers on each territory) showing how many units occupy that space.</li>
+      <li><strong>Territory cards</strong> matching map regions (plus wildcards in the deck).</li>
+      <li>Six-sided dice for combat (handled by the app during the attack phase).</li>
+    </ul>
+
+    <h2 id="login">3. Login screen</h2>
+    <p>The login view uses a high-contrast “terminal” style: bright green accents on black. Use it to enter who is playing and in which colors before the match begins.</p>
+
+    <h3>Names and colors</h3>
+    <ul>
+      <li>For each player row, type a name in the <strong>black</strong> name field (green outline). Names are forced to uppercase.</li>
+      <li>Assign a color by tapping a swatch in the palette row above the form, in order from Player 1 downward. Each color can only be used once. The small square on the right of each row shows the color you picked; tap it again only to clear that row’s color and free the swatch.</li>
+      <li>The black swatch is true black with a green rim so it stays visible on the dark background.</li>
+    </ul>
+
+    <h3>Preset 1–6 (car-radio memory)</h3>
+    <p>The six preset buttons load a saved lineup in one tap. Each slot starts with a <strong>built-in</strong> example roster until you store your own.</p>
+    <ul>
+      <li><strong>Left-click</strong> a preset: fills the form with that preset’s players (replacing what was there).</li>
+      <li><strong>Right-click</strong> a preset: after you confirm, the <strong>current</strong> form (every row that has both a name and a color) is saved into that numbered slot. Duplicate names or duplicate colors in the form are not allowed.</li>
+      <li><strong>Hold</strong> the same button for about <strong>three seconds</strong> (mouse or finger): saves the current lineup to that preset <strong>without</strong> a confirmation dialog. (A short delay prevents an accidental normal click right after a hold.)</li>
+    </ul>
+    <p class="note" style="border-left-color:#00ff00;margin-top:12px;">
+      Custom presets are kept in <strong>this browser’s</strong> storage on the machine where you save them. They are not sent to other devices. On a <strong>public / TV</strong> mirror, only the host can change players and presets; the TV shows the mirrored form.
+    </p>
+
+    <h3>Random player turn</h3>
+    <p>The wide button at the end of the preset row shuffles <strong>turn order</strong> only: each name keeps its color, but who goes first is randomized. Requires at least two complete player rows, with all names and all colors unique.</p>
+
+    <h3>Logging in</h3>
+    <ul>
+      <li><strong>LOG IN</strong> requires at least <strong>two</strong> players, each with a unique name and a unique color.</li>
+      <li>From the full-screen login (if your entry point shows it), <strong>Game Manual</strong> and <strong>Help</strong> open in a new tab; <strong>Load Game</strong> restores a saved JSON if you use that flow.</li>
+    </ul>
+
+    <h2>4. Starting the game</h2>
+    <p>After login, the app walks players through setup: dealing starting territories, choosing order, and placing initial armies. Follow the on-screen prompts and the privacy gate when your hand should stay secret.</p>
+
+    <h2>5. Turn overview</h2>
+    <p>A full turn normally includes these ideas (exact screens depend on the current phase in the app):</p>
+    <ol>
+      <li><strong>Card play</strong> — You may trade matching sets of cards for extra armies (values rise as more sets are traded in the game). You might skip if you are not trading.</li>
+      <li><strong>Income</strong> — Count armies you receive: a base amount from how many territories you hold, plus bonuses for <strong>whole continents</strong> you control at that moment. Continent bonuses use the fixed values in the rules (e.g. Asia largest, Australia and South America smaller).</li>
+      <li><strong>Deploy</strong> — Place new armies onto your own territories.</li>
+      <li><strong>Attack</strong> — Attack adjacent enemy territories (or use an aerial bridge if the scenario allows). Roll dice; higher rolls kill defenders first, then attackers. You need at least two armies on a territory to attack from it.</li>
+      <li><strong>After a capture</strong> — Move at least as many armies into the new territory as the number of attack dice you used (unless the rules on-screen say otherwise). If you eliminate a player, you receive their cards; you may have to resolve card count over five before continuing.</li>
+      <li><strong>Reinforcement / end of turn</strong> — Move armies along a connected path of your own territories once (where the digital flow includes that step), then draw a territory card if you captured at least one territory this turn.</li>
+    </ol>
+
+    <h2>6. Combat (summary)</h2>
+    <ul>
+      <li>Attacker rolls up to three dice if they have at least four armies on the attacking territory (otherwise fewer).</li>
+      <li>Defender rolls up to two dice if they have at least two armies, otherwise one.</li>
+      <li>Dice are paired highest to highest; the lower die in each pair loses an army. Ties favor the defender.</li>
+      <li>When defenders reach zero, the attacker captures the territory and must move armies in.</li>
+    </ul>
+
+    <h2>7. Continents</h2>
+    <p>Owning <strong>every</strong> territory in a continent at the same time gives you that continent’s reinforcement bonus on your next income until you lose part of it. Bonuses are fixed by the game data (not editable in normal play).</p>
+
+    <h2>8. Cards</h2>
+    <ul>
+      <li>Three cards of the same unit type (infantry / cavalry / artillery), or one of each type, or wildcards as substitutes, form a tradable set.</li>
+      <li>If you hold five or more cards at the end of a turn (or when you take cards from an eliminated player), you must trade enough sets to get below five before continuing.</li>
+    </ul>
+
+    <h2>9. Winning</h2>
+    <p>You win when no other player controls any territory. The app may also declare a winner if only one player remains in the turn order.</p>
+
+    <h2>10. Instant replay (postgame)</h2>
+    <p>After the match, the <strong>host</strong> (private control screen) can run an <strong>instant replay</strong> of the recorded map timeline. The host picks where playback begins (default: <strong>full</strong> sequence from the <strong>territory deal</strong>); other options include skipping to the <strong>first battle</strong> or starting at the first frame <strong>at or after a chosen round</strong> when the tape includes round stamps. The timeline covers the random <strong>deal</strong>, <strong>setup deploy</strong> (placing starting armies), <strong>battle</strong> snapshots after fights, and brief <strong>elimination</strong> callouts when a player is wiped out. It is a map-only recap (no dice animation or card faces).</p>
+    <ul>
+      <li>If a <strong>public TV</strong> or second browser tab mirrors the host, it can show the same board advancing in step with replay, as long as mirroring is already working for live play.</li>
+      <li>Replay uses what was stored during that session; very old saves from before replay was recorded may have no replay, or only part of the game.</li>
+    </ul>
+
+    <div class="note">
+      <strong>House rules:</strong> Your group can agree on time limits, alliances, or “kingmaker” etiquette. Anything not enforced by the software is up to the table.
+    </div>
+
+    <p style="margin-top:32px;font-size:14px;color:#94a3b8;">For controls, phases, and troubleshooting, open the <a href="help.html" style="color:#38bdf8;">Help</a> page.</p>
+  </main>
+</body>
+</html>

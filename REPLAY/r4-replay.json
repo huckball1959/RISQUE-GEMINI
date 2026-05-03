@@ -1,0 +1,23 @@
+{
+  "format": "risque-replay-v1",
+  "replayScope": "round",
+  "replayRound": 4,
+  "tapeFormatVersion": 2,
+  "savedAt": 1717000004000,
+  "round": 4,
+  "phase": "attack",
+  "currentPlayer": "Guido",
+  "sessionKey": "mock-chain-001",
+  "playerColors": { "guido": "blue", "rival": "red" },
+  "tape": {
+    "v": 2,
+    "openingRecorded": false,
+    "hasDealFrames": false,
+    "events": [
+      { "type": "board", "segment": "deploy", "round": 4, "recordedForPlayer": "Guido", "board": { "alaska": { "owner": "Guido", "troops": 8 }, "northwest_territory": { "owner": "Guido", "troops": 5 }, "ontario": { "owner": "Rival", "troops": 5 }, "quebec": { "owner": "Rival", "troops": 5 } } },
+      { "type": "board", "segment": "battle", "round": 4, "recordedForPlayer": "Guido", "board": { "alaska": { "owner": "Guido", "troops": 7 }, "northwest_territory": { "owner": "Guido", "troops": 4 }, "ontario": { "owner": "Rival", "troops": 3 }, "quebec": { "owner": "Rival", "troops": 5 } } },
+      { "type": "board", "segment": "battle", "round": 4, "recordedForPlayer": "Guido", "board": { "alaska": { "owner": "Guido", "troops": 6 }, "northwest_territory": { "owner": "Guido", "troops": 3 }, "ontario": { "owner": "Guido", "troops": 1 }, "quebec": { "owner": "Rival", "troops": 5 } } },
+      { "type": "board", "segment": "reinforce", "round": 4, "recordedForPlayer": "Rival", "board": { "alaska": { "owner": "Guido", "troops": 6 }, "northwest_territory": { "owner": "Guido", "troops": 5 }, "ontario": { "owner": "Guido", "troops": 3 }, "quebec": { "owner": "Rival", "troops": 7 } } }
+    ]
+  }
+}
