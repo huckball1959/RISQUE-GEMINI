@@ -68,7 +68,7 @@
 
   function colorHex(colorName) {
     var colors = {
-      blue: "#0000ff",
+      blue: "#87bfff",
       red: "#ff0000",
       green: "#008000",
       yellow: "#ffff00",

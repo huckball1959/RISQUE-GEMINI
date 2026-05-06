@@ -169,7 +169,8 @@ body {
 #screen-designer .svg-overlay circle.territory-mgm-selected-visual {
   transition: r 0.28s cubic-bezier(0.22, 1, 0.36, 1), stroke-width 0.2s ease-out;
 }
-#screen-designer .svg-overlay text.territory-number {
+#screen-designer .svg-overlay text.territory-number,
+#screen-designer .svg-overlay g.territory-number text {
   cursor: pointer;
   transition: font-size 0.24s cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -352,7 +353,7 @@ body {
 }
 
 #risque-login-embedded-root .color-swatch.blue {
-  background: #0000ff;
+  background: #87bfff;
 }
 
 #risque-login-embedded-root .color-swatch.red {

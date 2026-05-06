@@ -579,6 +579,14 @@ function logToStorage(message, data) {
   }
 }
 
+function risqueAttackScheduleMirrorPush() {
+  if (typeof window.risqueScheduleMirrorPush === 'function') {
+    window.risqueScheduleMirrorPush();
+  } else if (typeof window.risqueMirrorPushGameState === 'function') {
+    window.risqueMirrorPushGameState();
+  }
+}
+
 function prependCombatLog(text, kind = 'battle') {
   const logEl = elements.logText || document.getElementById('log-text');
   if (!logEl) return;
@@ -598,9 +606,7 @@ function prependCombatLog(text, kind = 'battle') {
       window.gameState.risqueCombatLogTail.length = 50;
     }
   }
-  if (typeof window.risqueMirrorPushGameState === 'function') {
-    window.risqueMirrorPushGameState();
-  }
+  risqueAttackScheduleMirrorPush();
   if (
     window.risqueRuntimeHud &&
     typeof window.risqueRuntimeHud.clampCombatLogToCanvasBottom === 'function'
@@ -626,9 +632,7 @@ function prettyTerritoryName(id) {
 }
 
 function pushPublicAttackMirror() {
-  if (typeof window.risqueMirrorPushGameState === 'function') {
-    window.risqueMirrorPushGameState();
-  }
+  risqueAttackScheduleMirrorPush();
 }
 
 /** Public TV: clear post-transfer line and show who picked attack-from. */
@@ -733,7 +737,24 @@ function checkPlayerElimination(defenderPlayer) {
   window.gameState.transferredCardCount = transferredCards.length;
   window.gameState.cardEarnedViaAttack = true;
   window.gameState.defeatedPlayer = defenderPlayer.name;
-  window.gameState.turnOrder = window.gameState.turnOrder.filter(name => name !== defenderPlayer.name);
+  const turnOrderBeforeElimination = Array.isArray(window.gameState.turnOrder)
+    ? window.gameState.turnOrder.slice()
+    : [];
+  window.gameState.turnOrder = turnOrderBeforeElimination.filter(name => name !== defenderPlayer.name);
+  if (
+    turnOrderBeforeElimination.length >= 2 &&
+    window.gameState.turnOrder.length === 1
+  ) {
+    try {
+      window.gameState.risqueReplayGameWinDiskFlush = {
+        turnOrderBefore: turnOrderBeforeElimination,
+        roundAtElimination: Math.max(1, Number(window.gameState.round) || 1),
+        conqueror: String(currentPlayer.name || '')
+      };
+    } catch (eMeta) {
+      /* ignore */
+    }
+  }
   window.gameState.risquePublicEliminationBanner = `${currentPlayer.name} has conquered ${defenderPlayer.name}.`;
   if (typeof window.risqueReplayRecordElimination === 'function') {
     try {
@@ -832,6 +853,8 @@ function checkPlayerElimination(defenderPlayer) {
         /* ignore */
       }
       delete window.__risqueGameWinOverlayMounted;
+      /* Public TV only mirrors the host — never navigate or rewrite STORAGE_KEY from here. */
+      if (window.risqueDisplayIsPublic) return;
       risqueGameWinNavigateToPostgame();
     }, RISQUE_GAME_WIN_OVERLAY_MS);
   };
@@ -1194,9 +1217,7 @@ function dismissPrompt(opts) {
   try {
     if (window.gameState && !keepInstantCampaignHud) {
       window.gameState.risqueControlVoice = { primary: '', report: '', reportClass: '' };
-      if (typeof window.risqueMirrorPushGameState === 'function') {
-        window.risqueMirrorPushGameState();
-      }
+      risqueAttackScheduleMirrorPush();
     }
     if (document.body && window.gameState && String(window.gameState.phase) === "reinforce") {
       document.body.setAttribute("data-risque-reinforce-slot-mode", "main");
@@ -1425,10 +1446,9 @@ function showPrompt(message, buttons = [], selectOptions = null, report = '') {
           acquired.troops = minTroopsToTransfer + troopsToTransfer;
           window.gameState.attackingTerritory = { name: attacking.name, troops: attacking.troops };
           window.gameState.acquiredTerritory = { name: acquired.name, troops: acquired.troops };
-          window.gameUtils.renderTerritories(null, window.gameState);
-          if (typeof window.risqueMirrorPushGameState === 'function') {
-            window.risqueMirrorPushGameState();
-          }
+          window.gameUtils.renderTerritories(attacking.name, window.gameState);
+          window.gameUtils.renderTerritories(acquired.name, window.gameState);
+          risqueAttackScheduleMirrorPush();
         }
       };
       /* Wheel is handled globally via setupAttackTroopTransferWheel while attackPhase === pending_transfer. */
@@ -1550,9 +1570,7 @@ function showPrompt(message, buttons = [], selectOptions = null, report = '') {
       report: reportMirror,
       reportClass: reportClassMirror
     };
-    if (typeof window.risqueMirrorPushGameState === 'function') {
-      window.risqueMirrorPushGameState();
-    }
+    risqueAttackScheduleMirrorPush();
   }
 }
 
@@ -1886,9 +1904,7 @@ function applyBattleRoundAfterRoll(snap, opts) {
     if (flash.length) {
       window.gameState.risqueBattleLossFlashLabels = flash;
       scheduleBattleLossFlashClear();
-      if (typeof window.risqueMirrorPushGameState === 'function') {
-        window.risqueMirrorPushGameState();
-      }
+      risqueAttackScheduleMirrorPush();
     } else {
       delete window.gameState.risqueBattleLossFlashLabels;
     }
@@ -5301,9 +5317,7 @@ window.handleTerritoryClick = function(label, owner, troops) {
     updateBattlePanelReadout();
     renderAerialBridge();
     saveGameState();
-    if (typeof window.risqueMirrorPushGameState === 'function') {
-      window.risqueMirrorPushGameState();
-    }
+    risqueAttackScheduleMirrorPush();
     const srcN = prettyTerritoryName(pending.source);
     const tgtN = prettyTerritoryName(pending.target);
     if (window.risqueRuntimeHud && typeof window.risqueRuntimeHud.setControlVoiceText === 'function') {

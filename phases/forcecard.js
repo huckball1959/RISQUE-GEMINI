@@ -122,6 +122,34 @@
     }
   }
 
+  var __forceCardEndDefaultLabel = "CONTINUE";
+
+  function forceCardSetEndSaving(busy) {
+    var btn = document.getElementById("forcecard-btn-end");
+    if (!btn) return;
+    if (busy) {
+      if (!btn.getAttribute("data-default-label")) {
+        try {
+          btn.setAttribute(
+            "data-default-label",
+            (btn.textContent || __forceCardEndDefaultLabel).trim() || __forceCardEndDefaultLabel
+          );
+        } catch (eLab) {
+          btn.setAttribute("data-default-label", __forceCardEndDefaultLabel);
+        }
+      }
+      btn.disabled = true;
+      btn.setAttribute("aria-busy", "true");
+      btn.textContent = "Saving…";
+      forceCardSetMessage("Saving turn to disk…");
+    } else {
+      var def = btn.getAttribute("data-default-label") || __forceCardEndDefaultLabel;
+      btn.disabled = false;
+      btn.removeAttribute("aria-busy");
+      btn.textContent = def;
+    }
+  }
+
   function forceCardRunDisplay() {
     var handStrip = document.getElementById("forcecard-hand-strip");
     var newImg = document.getElementById("forcecard-new-img");
@@ -244,61 +272,99 @@
       }
       return;
     }
-    /* Non-conquest: advance turn then same handoff as receive-card */
-    if (typeof window.risqueReceiveCardAdvanceTurn !== "function" || !window.risqueReceiveCardAdvanceTurn()) {
+    /* Non-conquest: advance turn then same handoff as receive-card (await turn disk before sync navigate). */
+    if (typeof window.risqueReceiveCardAdvanceTurn !== "function") {
       return;
     }
-    var gsFc = window.gameState || {};
-    try {
-      delete gsFc.risqueControlVoice;
-    } catch (eCvDel) {
-      /* ignore */
+    forceCardSetEndSaving(true);
+    var advFc = window.risqueReceiveCardAdvanceTurn();
+    if (!advFc || advFc === false) {
+      forceCardSetEndSaving(false);
+      return;
     }
-    var nextPlayerName = (gsFc.currentPlayer ? gsFc.currentPlayer : "the next player").toString();
-    try {
-      gsFc.risquePublicNextPlayerHandoffPrimary = "Next player is " + nextPlayerName;
-      gsFc.risquePublicNextPlayerHandoffReport = "";
-    } catch (eHand) {
-      /* ignore */
+    var diskWaitFc =
+      advFc.turnDisk && typeof advFc.turnDisk.then === "function" ? advFc.turnDisk : Promise.resolve(true);
+    if (
+      (!advFc.turnDisk || typeof advFc.turnDisk.then !== "function") &&
+      typeof window.risqueSessionDiskHasWritableSaveTarget === "function" &&
+      window.risqueSessionDiskHasWritableSaveTarget()
+    ) {
+      diskWaitFc =
+        typeof window.risqueSessionDiskAwaitTurnWriteQueue === "function"
+          ? window.risqueSessionDiskAwaitTurnWriteQueue()
+          : diskWaitFc;
     }
-    try {
-      localStorage.setItem("gameState", JSON.stringify(gsFc));
-    } catch (e) {
-      /* ignore */
-    }
-    if (typeof window.risqueHostReplaceShellGameState === "function") {
-      window.risqueHostReplaceShellGameState(gsFc);
-    }
-    if (typeof window.risqueMirrorPushGameState === "function") {
-      window.risqueMirrorPushGameState();
-    }
-    var nextHandoffMsg =
-      "Next player\n\nHand the tablet to " +
-      nextPlayerName +
-      " for card play.\n\nOnly this player should tap Continue.";
-    function goNextPlayerCardplay() {
-      var target = "game.html?phase=cardplay&legacyNext=income.html&postReceive=1";
-      if (typeof window.risqueMarkPostReceiveCardplayBlackout === "function") {
-        window.risqueMarkPostReceiveCardplayBlackout();
+    function forceCardAfterTurnDisk() {
+      var gsFc = window.gameState || {};
+      try {
+        delete gsFc.risqueControlVoice;
+      } catch (eCvDel) {
+        /* ignore */
       }
-      if (window.risqueNavigateWithFade) {
-        window.risqueNavigateWithFade(target);
-      } else {
-        window.location.href = target;
+      var nextPlayerName = (gsFc.currentPlayer ? gsFc.currentPlayer : "the next player").toString();
+      try {
+        gsFc.risquePublicNextPlayerHandoffPrimary = "Next player is " + nextPlayerName;
+        gsFc.risquePublicNextPlayerHandoffReport = "";
+      } catch (eHand) {
+        /* ignore */
       }
-    }
-    var PGn = window.risquePhases && window.risquePhases.privacyGate;
-    if (!window.risqueDisplayIsPublic && PGn && typeof PGn.mountHostTabletHandoff === "function") {
-      PGn.mountHostTabletHandoff({
-        message: nextHandoffMsg,
-        onContinue: goNextPlayerCardplay,
-        onLog: function (line) {
-          forceCardLog(line);
+      try {
+        localStorage.setItem("gameState", JSON.stringify(gsFc));
+      } catch (e) {
+        /* ignore */
+      }
+      if (typeof window.risqueHostReplaceShellGameState === "function") {
+        window.risqueHostReplaceShellGameState(gsFc);
+      }
+      if (typeof window.risqueMirrorPushGameState === "function") {
+        window.risqueMirrorPushGameState();
+      }
+      var nextHandoffMsg =
+        "Next player\n\nHand the tablet to " +
+        nextPlayerName +
+        " for card play.\n\nOnly this player should tap Continue.";
+      function goNextPlayerCardplay() {
+        var target = "game.html?phase=cardplay&legacyNext=income.html&postReceive=1";
+        if (typeof window.risqueMarkPostReceiveCardplayBlackout === "function") {
+          window.risqueMarkPostReceiveCardplayBlackout();
         }
-      });
-    } else {
-      goNextPlayerCardplay();
+        if (window.risqueNavigateWithFade) {
+          window.risqueNavigateWithFade(target);
+        } else {
+          window.location.href = target;
+        }
+      }
+      var PGn = window.risquePhases && window.risquePhases.privacyGate;
+      if (!window.risqueDisplayIsPublic && PGn && typeof PGn.mountHostTabletHandoff === "function") {
+        PGn.mountHostTabletHandoff({
+          message: nextHandoffMsg,
+          onContinue: goNextPlayerCardplay,
+          onLog: function (line) {
+            forceCardLog(line);
+          }
+        });
+      } else {
+        goNextPlayerCardplay();
+      }
     }
+    diskWaitFc
+      .then(function () {
+        return typeof window.risqueSessionDiskAwaitTurnWriteQueue === "function"
+          ? window.risqueSessionDiskAwaitTurnWriteQueue()
+          : Promise.resolve(true);
+      })
+      .then(
+        function () {
+          forceCardAfterTurnDisk();
+        },
+        function (err) {
+          forceCardLog("Turn save failed before navigation", err);
+          forceCardSetMessage(
+            "Could not finish saving to disk. Check folder access, wait a moment, then tap Continue again."
+          );
+          forceCardSetEndSaving(false);
+        }
+      );
   }
 
   function initForceCardPhase(conquestElim) {

@@ -1,8 +1,9 @@
 @echo off
 setlocal
 REM ============================================================================
-REM  RISQUE-BETA — opens the game from disk (file://). No local HTTP server.
-REM  Delegates to scripts\RISQUE.ps1 (save tree, launcher-paths, Chromium downloads).
+REM  RISQUE-GEMINI — launcher entry (double-click). Delegates to scripts\RISQUE.ps1:
+REM  flat save folder, risque-launcher-paths.json, menu (1) local file:// (2) hosted GEMINI URL.
+REM  Extra args pass through (e.g. -NoReplayDebug). See scripts\RISQUE.bat header.
 REM ============================================================================
 
 cd /d "%~dp0"

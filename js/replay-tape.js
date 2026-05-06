@@ -5,6 +5,64 @@
 (function () {
   "use strict";
 
+  /**
+   * Opt-in tape debugging for a new match (host + replay-machine):
+   *   • URL: ?replayDebug=1 on game.html or replay-machine.html
+   *   • Or: localStorage.setItem('risqueReplayDebug','1') then reload
+   * Disable: localStorage.removeItem('risqueReplayDebug') and drop the query param.
+   */
+  function risqueReplayDebugIsOn() {
+    try {
+      if (typeof window !== "undefined" && window.location) {
+        if (new URL(window.location.href).searchParams.get("replayDebug") === "1") return true;
+      }
+      if (typeof localStorage !== "undefined" && localStorage.getItem("risqueReplayDebug") === "1") {
+        return true;
+      }
+    } catch (e) {
+      /* ignore */
+    }
+    return false;
+  }
+
+  function risqueReplayDebugLog() {
+    if (!risqueReplayDebugIsOn()) return;
+    try {
+      var a = ["[ReplayDebug]"].concat(Array.prototype.slice.call(arguments));
+      console.log.apply(console, a);
+    } catch (eL) {
+      /* ignore */
+    }
+  }
+
+  window.risqueReplayDebugIsOn = risqueReplayDebugIsOn;
+  window.risqueReplayDebugLog = risqueReplayDebugLog;
+
+  /**
+   * Strict indexOf fails when currentPlayer spelling differs from turnOrder (case/trim).
+   * Granular disk flush matches tape recordedForPlayer to prev — wrong index ⇒ empty rNpM files.
+   */
+  window.risqueReplayResolveTurnOrderIndex = function (turnOrder, playerName) {
+    if (!Array.isArray(turnOrder) || playerName == null) return { index: -1, canonical: "" };
+    var raw = String(playerName).trim();
+    if (!raw) return { index: -1, canonical: "" };
+    var i;
+    for (i = 0; i < turnOrder.length; i++) {
+      var t = turnOrder[i];
+      if (!t) continue;
+      var s = String(t).trim();
+      if (s === raw) return { index: i, canonical: s };
+    }
+    var low = raw.toLowerCase();
+    for (i = 0; i < turnOrder.length; i++) {
+      t = turnOrder[i];
+      if (!t) continue;
+      s = String(t).trim();
+      if (s.toLowerCase() === low) return { index: i, canonical: s };
+    }
+    return { index: -1, canonical: raw };
+  };
+
   var TAPE_VERSION = 2;
   /** Per completed round only — deal-heavy round 1 can be large; battles rarely approach this. */
   var MAX_EVENTS_PER_ROUND = 12000;
@@ -282,7 +340,18 @@
     var n = typeof r === "number" ? r : parseInt(r, 10);
     evt.round = isFinite(n) && n >= 1 ? n : 1;
     if (gs && gs.currentPlayer != null && String(gs.currentPlayer).trim() !== "") {
-      evt.recordedForPlayer = String(gs.currentPlayer);
+      var cpStamp = String(gs.currentPlayer).trim();
+      if (
+        Array.isArray(gs.turnOrder) &&
+        gs.turnOrder.length &&
+        typeof window.risqueReplayResolveTurnOrderIndex === "function"
+      ) {
+        var torStamp = window.risqueReplayResolveTurnOrderIndex(gs.turnOrder, gs.currentPlayer);
+        if (torStamp && torStamp.index >= 0 && torStamp.canonical) {
+          cpStamp = String(torStamp.canonical);
+        }
+      }
+      evt.recordedForPlayer = cpStamp;
     }
   }
 
@@ -312,6 +381,20 @@
   function pushRaw(gs, evt) {
     ensureTape(gs);
     if (!appendReplayEvent(gs, evt)) return;
+    if (risqueReplayDebugIsOn() && evt) {
+      var seg0 = evt.segment != null ? String(evt.segment) : "";
+      var typ0 = String(evt.type || "");
+      var nk0 =
+        evt.board && typeof evt.board === "object" ? Object.keys(evt.board).length : 0;
+      risqueReplayDebugLog(
+        "record",
+        typ0 + (seg0 ? "/" + seg0 : ""),
+        "stampRound=" + (evt.round != null ? evt.round : "—"),
+        "liveRound=" + (gs && gs.round != null ? gs.round : "—"),
+        "boardKeys=" + nk0,
+        "cp=" + (gs && gs.currentPlayer != null ? String(gs.currentPlayer) : "")
+      );
+    }
     mergeReplayPlayerColors(gs);
     pushMirror();
   }
@@ -383,7 +466,9 @@
    */
   function buildGranularReplayPack(gs, eventsSlice, meta) {
     meta = meta || {};
-    if (!gs || typeof gs !== "object" || !Array.isArray(eventsSlice) || !eventsSlice.length) return null;
+    if (!gs || typeof gs !== "object" || !Array.isArray(eventsSlice)) return null;
+    var allowEmpty = meta.allowEmptyDiskSegment === true;
+    if (!eventsSlice.length && !allowEmpty) return null;
     var openingRecorded = eventsSlice.some(function (e) {
       return e && e.type === "init";
     });
@@ -573,22 +658,14 @@
   };
 
   /**
-   * After round autosave has exported replay for `completedRound`, drop that round's bucket from **live**
-   * `gameState.risqueReplayByRound` so host saves / mirror stringify stay smaller (blitz + long matches).
-   * Completed-round replay should already be in the round export / sidecar; in-memory Wayback for that round
-   * alone is sacrificed until reload from disk.
+   * Previously dropped completed rounds from RAM after autosave to shrink stringify / mirror payloads.
+   * That broke Wayback and replay-full merges when disk round files were missing or stale (playback jumped
+   * from deal to R4, etc.). Tape now stays in memory for the session; replay-full.json + replayN.json are
+   * refreshed from disk autosave and turn checkpoints. QuotaExceeded handling in saveState may still prune
+   * oldest buckets via risqueReplayPruneOldestRoundBuckets.
    */
-  window.risqueReplayReleaseCompletedRoundAfterAutosave = function (liveGs, completedRoundNum) {
-    if (!liveGs || typeof liveGs !== "object" || window.risqueDisplayIsPublic) return;
-    if (!liveGs.risqueReplayByRound || typeof liveGs.risqueReplayByRound !== "object") return;
-    var n = Math.floor(Number(completedRoundNum) || 0) || 0;
-    if (n < 1) return;
-    var k = String(n);
-    var liveR = Math.floor(Number(liveGs.round) || 0) || 0;
-    if (!liveR || n >= liveR) return;
-    try {
-      if (liveGs.risqueReplayByRound[k]) delete liveGs.risqueReplayByRound[k];
-    } catch (eDrop) {}
+  window.risqueReplayReleaseCompletedRoundAfterAutosave = function () {
+    /* no-op — keep risqueReplayByRound intact for stable session replay and crash recovery */
   };
 
   /**
@@ -685,8 +762,7 @@
     ensureReplayByRound(gs);
     var evs = window.risqueReplayFlattenEvents(gs);
     if (!Array.isArray(evs) || !evs.length) return null;
-    evs = thinDealFramesForWaybackExport(evs);
-    if (!Array.isArray(evs) || !evs.length) return null;
+    /* Do not thin deal frames here — session export must preserve full deal animation for Wayback/replay-full. */
     evs = replayNormalizeTapeEventOrder(evs);
     if (!Array.isArray(evs) || !evs.length) return null;
     var maxR = maxRoundInEvents(evs);
@@ -751,6 +827,26 @@
       return e && e.type === "board" && e.segment === "deal";
     });
     return hi && hd;
+  }
+
+  /** Init+deal, or per-territory deal (many steps), or deal+deploy — matches on-disk tapes that omit legacy init. */
+  function tapeHasUsableReplayOpening(evs) {
+    if (!Array.isArray(evs)) return false;
+    var dealN = 0;
+    var depN = 0;
+    var hi = false;
+    var i;
+    for (i = 0; i < evs.length; i++) {
+      var e = evs[i];
+      if (!e) continue;
+      if (e.type === "init") hi = true;
+      if (e.type === "board" && e.segment === "deal") dealN++;
+      if (e.type === "board" && e.segment === "deploy") depN++;
+    }
+    if (hi && dealN) return true;
+    if (dealN >= 8) return true;
+    if (dealN >= 1 && depN >= 1) return true;
+    return false;
   }
 
   function tapeHasInitOnly(evs) {
@@ -916,6 +1012,94 @@
         return a.sav - b.sav;
       });
       var sortSav = lst.length ? lst[0].sav : 0;
+      function openingSidecarNoBattle(pk) {
+        if (!pk || !pk.tape || !Array.isArray(pk.tape.events) || !pk.tape.events.length) return false;
+        if (pk.risqueReplayGranularAttackPhase === true) return false;
+        if (!tapeHasUsableReplayOpening(pk.tape.events)) return false;
+        return !pk.tape.events.some(function (e) {
+          return e && e.type === "board" && e.segment === "battle";
+        });
+      }
+      var openSeg = lst.filter(function (x) {
+        return x.pack && openingSidecarNoBattle(x.pack);
+      });
+      var granSeg = lst.filter(function (x) {
+        return x.pack && x.pack.risqueReplayGranularAttackPhase === true;
+      });
+      var otherSeg = lst.filter(function (x) {
+        return openSeg.indexOf(x) < 0 && granSeg.indexOf(x) < 0;
+      });
+      /* DD.json + r1p1… share replayRound 1; without this branch the non-granular path keeps newest only and drops the deal/deploy opening. */
+      if (granSeg.length && openSeg.length) {
+        var eventsOpenGran = [];
+        openSeg.forEach(function (x) {
+          var teO = x.pack.tape && x.pack.tape.events;
+          if (teO && teO.length) eventsOpenGran = eventsOpenGran.concat(teO.slice());
+        });
+        granSeg.forEach(function (x) {
+          var teG = x.pack.tape && x.pack.tape.events;
+          if (teG && teG.length) eventsOpenGran = eventsOpenGran.concat(teG.slice());
+        });
+        var tailPkOg = granSeg.length ? granSeg[granSeg.length - 1].pack : openSeg[openSeg.length - 1].pack;
+        var mgColorsOg = {};
+        openSeg.concat(granSeg).forEach(function (x) {
+          var pc = x.pack && x.pack.playerColors;
+          if (!pc || typeof pc !== "object") return;
+          Object.keys(pc).forEach(function (key) {
+            var v = pc[key];
+            if (v == null || String(v).trim() === "") return;
+            var kn = String(key).trim().toLowerCase();
+            if (mgColorsOg[kn] == null || String(mgColorsOg[kn]).trim() === "") {
+              mgColorsOg[kn] = String(v).trim().toLowerCase();
+            }
+          });
+        });
+        var warnOg = [
+          "Opening tape (deal/deploy) + " +
+            granSeg.length +
+            " attack segment file(s) for round " +
+            rr +
+            " (save-time order)."
+        ];
+        if (otherSeg.length) {
+          warnOg.push(
+            "Ignored " +
+              otherSeg.length +
+              " other replay file(s) for round " +
+              rr +
+              " in favor of opening + attack segments."
+          );
+        }
+        resolved.push({
+          rr: rr,
+          sav: sortSav,
+          pack: {
+            format: "risque-replay-v1",
+            replayScope: "merged",
+            replayRound: rr,
+            risqueReplayGranularGlueRelax: true,
+            tapeFormatVersion: TAPE_VERSION,
+            savedAt: Date.now(),
+            round: tailPkOg.round,
+            phase: tailPkOg.phase,
+            currentPlayer: tailPkOg.currentPlayer,
+            sessionKey: tailPkOg.sessionKey,
+            playerColors: mgColorsOg,
+            tape: {
+              v: TAPE_VERSION,
+              events: eventsOpenGran,
+              openingRecorded: eventsOpenGran.some(function (e) {
+                return e && e.type === "init";
+              }),
+              hasDealFrames: eventsOpenGran.some(function (e) {
+                return e && e.type === "board" && e.segment === "deal";
+              })
+            },
+            __mergeWarnings: warnOg
+          }
+        });
+        return;
+      }
       var allGran = lst.every(function (x) {
         return x.pack && x.pack.risqueReplayGranularAttackPhase === true;
       });
@@ -1054,6 +1238,25 @@
     }
     if (skList.length > 1) warns.push("Mixed session keys across files — OK if you meant to combine sessions.");
     var evs = events;
+    if (typeof window.risqueReplayStripBackwardStampedRoundBoards === "function") {
+      try {
+        var stMerged = window.risqueReplayStripBackwardStampedRoundBoards(evs.slice());
+        if (risqueReplayDebugIsOn()) {
+          risqueReplayDebugLog(
+            "merge strip",
+            "in=" + evs.length,
+            "out=" + stMerged.events.length,
+            "skipped=" + (stMerged.skipped || 0)
+          );
+        }
+        evs = stMerged.events;
+        if (stMerged.skipped > 0 && stMerged.message && warns.indexOf(stMerged.message) === -1) {
+          warns.push(stMerged.message);
+        }
+      } catch (eStripMr) {
+        /* ignore */
+      }
+    }
     var mergedPlayerColors = {};
     var sortedForColors = sorted.slice().sort(function (a, b) {
       return effectiveReplayRoundFromPackMerge(a) - effectiveReplayRoundFromPackMerge(b);
@@ -1276,35 +1479,6 @@
     return out;
   };
 
-  /** Optional: cap dense deal animation frames before export (localStorage quota only at large sizes). */
-  function thinDealFramesForWaybackExport(events) {
-    if (!Array.isArray(events) || events.length < 220) return events;
-    var dealIdx = [];
-    var i;
-    for (i = 0; i < events.length; i++) {
-      var ev = events[i];
-      if (ev && ev.type === "board" && ev.segment === "deal") dealIdx.push(i);
-    }
-    if (dealIdx.length <= 72) return events;
-    var keep = {};
-    var step = Math.max(1, Math.ceil(dealIdx.length / 24));
-    for (i = 0; i < dealIdx.length; i += step) {
-      keep[dealIdx[i]] = true;
-    }
-    keep[dealIdx[dealIdx.length - 1]] = true;
-    keep[dealIdx[0]] = true;
-    var out = [];
-    for (i = 0; i < events.length; i++) {
-      var e2 = events[i];
-      if (e2 && e2.type === "board" && e2.segment === "deal") {
-        if (keep[i]) out.push(e2);
-      } else {
-        out.push(e2);
-      }
-    }
-    return out;
-  }
-
   function ensureLatestBoardFrameForExport(gs) {
     if (!gs || typeof gs !== "object") return;
     try {
@@ -1508,6 +1682,16 @@
         sBat > mBat)
     ) {
       return sessionPack;
+    }
+    /*
+     * Disk merge can drop init/deal when duplicate replayRound files keep only the newest (DD vs replay1),
+     * or when autosave used a clone with gs.round forced to a completed round — merged then beat session
+     * on length while being a tail snapshot. Prefer RAM session when it still has a usable opening
+     * (init+deal, or per-territory deal+deploy) and matches or beats merged round spread (ties → session).
+     */
+    if (sessionPack && tapeHasUsableReplayOpening(sEvs)) {
+      if (!tapeHasUsableReplayOpening(mEvs)) return sessionPack;
+      if (sDc >= mDc) return sessionPack;
     }
     return mergedPack;
   };

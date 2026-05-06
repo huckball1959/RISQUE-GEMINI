@@ -32,6 +32,12 @@
 
   function buildPanelInnerHtml() {
     return (
+      '<div id="risque-public-wayback-head" class="risque-public-wayback-head" hidden aria-hidden="true">' +
+      '<div class="risque-public-wayback-brand" aria-label="Wayback Machine">WAYBACK MACHINE</div>' +
+      '<div class="risque-public-wayback-round-row" role="status">' +
+      '<span class="risque-public-wayback-round-label">ROUND PLAYING</span>' +
+      '<span id="risque-public-wayback-round-num" class="risque-public-wayback-round-num">—</span>' +
+      "</div></div>" +
       '<div id="hud-attack-chrome" class="hud-attack-chrome">' +
         '<div class="attack-dice-columns">' +
           '<div class="attack-dice-col attack-dice-col--attacker">' +

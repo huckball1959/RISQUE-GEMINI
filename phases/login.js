@@ -57,7 +57,7 @@
       "#risque-login-overlay .color-swatch{width:44px;height:44px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;line-height:1.05;color:#fff;text-align:center;cursor:pointer;pointer-events:auto;border:none;border-radius:2px;padding:2px;box-sizing:border-box;}" +
       "#risque-login-overlay .color-swatch.active{filter:brightness(1.18);transform:scale(1.06);}" +
       "#risque-login-overlay .color-swatch.unavailable{opacity:0.3;cursor:default;pointer-events:none;}" +
-      "#risque-login-overlay .color-swatch.blue{background:#0000ff;}" +
+      "#risque-login-overlay .color-swatch.blue{background:#87bfff;}" +
       "#risque-login-overlay .color-swatch.red{background:#ff0000;}" +
       "#risque-login-overlay .color-swatch.green{background:#008000;}" +
       "#risque-login-overlay .color-swatch.yellow{background:#ffff00;color:#000;}" +
@@ -209,14 +209,24 @@
   }
 
   function validateLoadedGameState(gameState) {
-    return !!(
-      gameState &&
-      gameState.players &&
-      gameState.players.length >= 2 &&
-      gameState.players.every(function (p) {
+    if (
+      !gameState ||
+      !gameState.players ||
+      !gameState.players.length ||
+      !gameState.players.every(function (p) {
         return p.name && p.color && Array.isArray(p.territories);
       })
-    );
+    ) {
+      return false;
+    }
+    if (gameState.players.length >= 2) return true;
+    /* Session finalize (game-final.json) often keeps only the winner; roster proves a multi-player game. */
+    if (gameState.players.length === 1) {
+      var ro = gameState.risqueLuckySessionRoster;
+      if (Array.isArray(ro) && ro.length >= 2) return true;
+      if (String(gameState.phase || "") === "postgame") return true;
+    }
+    return false;
   }
 
   function fixResumePhase(gameState, log) {
@@ -273,7 +283,10 @@
             var u = new URL("game.html", window.location.href);
             u.searchParams.set("display", "public");
             u.searchParams.set("tvBootstrap", "1");
-            window.open(u.href, "risquePublicBoard", "noopener,noreferrer");
+            var pubW = window.open(u.href, "risquePublicBoard", "noopener,noreferrer");
+            try {
+              if (pubW && !pubW.closed) window.__risquePublicBoardWindow = pubW;
+            } catch (ePubW) {}
           }
         } catch (eOpen) {
           /* ignore */

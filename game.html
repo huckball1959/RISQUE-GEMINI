@@ -26,10 +26,35 @@
         var disp = String(q.get("display") || "").toLowerCase();
         window.risqueDisplayIsPublic = disp === "public";
         window.risqueDisplayMode = window.risqueDisplayIsPublic ? "public" : "host";
+        if (window.risqueDisplayIsPublic && window.opener && !window.opener.closed) {
+          try {
+            window.opener.__risquePublicBoardWindow = window;
+          } catch (eReg) {
+            /* ignore */
+          }
+        }
       } catch (e) {
         window.risqueDisplayIsPublic = false;
         window.risqueDisplayMode = "host";
       }
+    })();
+  </script>
+  <script>
+    (function () {
+      /* scripts\\RISQUE.bat (local): URLs carry replayDebug=1 so REPLAY / merge logs work with zero setup. */
+      try {
+        var rd = new URL(window.location.href).searchParams.get("replayDebug");
+        if (rd === "1") {
+          try {
+            localStorage.setItem("risqueReplayDebug", "1");
+          } catch (eLs) {}
+          console.info("[ReplayDebug] on — tape/merge/play logs; off: RISQUE.bat -NoReplayDebug or env RISQUE_NO_REPLAY_DEBUG=1");
+        } else if (rd === "0") {
+          try {
+            localStorage.removeItem("risqueReplayDebug");
+          } catch (eLs2) {}
+        }
+      } catch (eRd) {}
     })();
   </script>
   <!-- Black root only; phase changes use cross-document view transitions (Chromium) for cross-dissolve -->
@@ -38,7 +63,7 @@
       background-color: #000;
     }
   </style>
-  <link rel="stylesheet" href="game.css?v=corner-map-1080-auto-chip-2026-05-02" />
+  <link rel="stylesheet" href="game.css?v=pastel-blue-player-2026-05-06" />
   <script>
     (function () {
       try {
@@ -421,20 +446,20 @@
     })();
   </script>
 
-  <script src="js/core.js?v=std-income-meta-syntaxfix-2026-04-27f"></script>
+  <script src="js/core.js?v=marker-selected-hover-no-grow-2026-05-06"></script>
   <script src="js/replay-tape.js?v=round-replay-attack-tail-2026-05-01"></script>
-  <script src="js/risque-session-disk.js?v=flat-save-no-discard-2026-05-02"></script>
+  <script src="js/risque-session-disk.js?v=game-win-replay-flush-2026-05-06"></script>
   <script src="js/risque-session-staging.js?v=staging-disk-opt-in-2026-04-29"></script>
   <script src="js/risque-external-urls.js"></script>
   <script src="js/risque-local-disk.js?v=launcher-disk-api-2026-05-01"></script>
-  <script src="phases/login.js?v=login-clear-session-on-start-2026-05-02"></script>
+  <script src="phases/login.js?v=pastel-blue-player-2026-05-06"></script>
   <script src="phases/privacy-gate.js?v=privacy-continue-quota-2026-05-01"></script>
-  <script src="phases/player-select.js?v=selection-phase-coerce-2026-05-02"></script>
+  <script src="phases/player-select.js?v=pastel-blue-player-2026-05-06"></script>
   <script src="phases/deal.js"></script>
   <script src="phases/deploy.js?v=deploy-clear-std-income-meta-2026-04-27e"></script>
   <script src="phases/conquer.js?v=conquer-mirror-order-2026-04-14"></script>
-  <script src="phases/attack.js?v=campaign-capture-replay-tape-2026-05-02"></script>
-  <script src="phases/runtime-hud.js?v=public-card-processing-title-2026-04-28"></script>
+  <script src="phases/attack.js?v=game-win-replay-flush-2026-05-06"></script>
+  <script src="phases/runtime-hud.js?v=public-wayback-panel-2026-05-04"></script>
   <script src="js/post-cardplay-navigator.js"></script>
   <script src="phases/cardplay.js?v=cardplay-entry-replay-deal-2026-05-01"></script>
   <script src="phases/income.js?v=income-std-income-continent-meta-2026-04-27e"></script>
@@ -444,8 +469,8 @@
   <script src="phases/reinforce-phase.js?v=reinforce-phase-flex-order-2026-04-19b"></script>
   <script src="phases/receivecard.js?v=cardplay-entry-replay-deal-2026-05-01"></script>
   <script src="phases/postgame.js?v=flat-archive-msg-2026-05-02"></script>
-  <script src="phases/conquer-phase.js?v=conquer-runtime-2026-04-13"></script>
+  <script src="phases/conquer-phase.js?v=game-win-replay-flush-2026-05-06"></script>
   <script src="js/risque-save-folder-idb.js?v=autosave-folder-2026-04-30"></script>
-  <script src="js/game-shell.js?v=mirror-push-savestate-login-racefix-2026-05-02"></script>
+  <script src="js/game-shell.js?v=game-win-replay-flush-2026-05-06"></script>
 </body>
 </html>

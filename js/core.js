@@ -197,7 +197,7 @@ window.gameUtils = {
     }
   },
   colorMap: {
-    blue: "#0000ff",
+    blue: "#87bfff",
     red: "#ff0000",
     pink: "#ff69b4",
     black: "#333333",
@@ -640,6 +640,10 @@ window.gameUtils = {
         pointer-events: all;
         cursor: pointer;
       }
+      .territory-number text {
+        pointer-events: all;
+        cursor: pointer;
+      }
       .error {
         position: absolute;
         left: 1105px;
@@ -716,6 +720,13 @@ window.gameUtils = {
             return;
           }
           localStorage.setItem('gameState', JSON.stringify(gameState));
+          /* Manual file load must win over stale IndexedDB hydrate on next page.
+           * Use a fresh, high local seq so risque-game-state-idb.js will not overwrite this state. */
+          try {
+            localStorage.setItem('risqueGameStateIdbSeq', String(Date.now()));
+          } catch (eSeq) {
+            /* ignore */
+          }
           risqueCoreDebugLog('[Core] Game state loaded from file:', gameState);
           if (window.risqueNavigateWithFade) {
             window.risqueNavigateWithFade('game.html?phase=cardplay&legacyNext=income.html');
@@ -1150,7 +1161,7 @@ window.gameUtils = {
       ) {
         if (!changedLabel) {
           svg
-            .querySelectorAll('circle.territory-circle, text.territory-number, g.territory-deploy-satellite')
+            .querySelectorAll('circle.territory-circle, text.territory-number, g.territory-number, g.territory-troop-notches, g.territory-deploy-satellite')
             .forEach(el => el.remove());
         }
         return;
@@ -1211,14 +1222,14 @@ window.gameUtils = {
             );
           }
         }
-        const existingCircle = svg.querySelector(`circle[data-label="${label}"]`);
-        const existingNumber = svg.querySelector(`text[data-label="${label}"]`);
-        const existingDeploySat = svg.querySelector(`g.territory-deploy-satellite[data-label="${label}"]`);
-        const existingMgmVis = svg.querySelector(`circle[data-mgm-marker-vis="${label}"]`);
-        if (existingCircle) existingCircle.remove();
-        if (existingNumber) existingNumber.remove();
-        if (existingDeploySat) existingDeploySat.remove();
-        if (existingMgmVis) existingMgmVis.remove();
+        svg.querySelectorAll(`circle[data-label="${label}"]`).forEach(el => el.remove());
+        svg.querySelectorAll(`.territory-number[data-label="${label}"]`).forEach(el => el.remove());
+        svg.querySelectorAll(`g.territory-deploy-satellite[data-label="${label}"]`).forEach(el => el.remove());
+        svg.querySelectorAll(`circle.territory-troop-fill[data-label="${label}"]`).forEach(el => el.remove());
+        svg.querySelectorAll(`clipPath[data-troop-fill-clip="${label}"]`).forEach(el => el.remove());
+        svg.querySelectorAll(`g.territory-troop-notches[data-label="${label}"]`).forEach(el => el.remove());
+        svg.querySelectorAll(`circle[data-mgm-marker-vis="${label}"]`).forEach(el => el.remove());
+        svg.querySelectorAll(`circle.territory-circle-outline[data-label="${label}"]`).forEach(el => el.remove());
         /* No neutral/gray chips — only draw markers for owned territories (deal pops in over empty map).
          * Mock Game Maker must still render clickable neutral chips so you can paint from an empty board. */
         if (!playerName && !isMockGameMaker) {
@@ -1237,6 +1248,8 @@ window.gameUtils = {
             : playerName && gameState && gameState.risqueReplayPlaybackActive
               ? '#555555'
               : '#64748b';
+        const ownerColorKey =
+          player && player.color != null ? String(player.color).trim().toLowerCase() : '';
         const deployMirrorDraft =
           gameState &&
           String(gameState.phase) === 'deploy' &&
@@ -1282,9 +1295,13 @@ window.gameUtils = {
         const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
         circle.setAttributeNS(null, 'cx', territory.x);
         circle.setAttributeNS(null, 'cy', territory.y);
-        circle.setAttributeNS(null, 'fill', isDeployed ? '#ffffff' : color);
-        circle.setAttributeNS(null, 'stroke', isDeployed ? '#ff0000' : '#000000');
-        circle.setAttributeNS(null, 'stroke-width', isDeployed ? '4' : '2');
+        circle.setAttributeNS(
+          null,
+          'fill',
+          !playerName ? (isDeployed ? '#ffffff' : color) : '#000000'
+        );
+        circle.setAttributeNS(null, 'stroke', playerName ? color : '#000000');
+        circle.setAttributeNS(null, 'stroke-width', playerName ? '7' : (isDeployed ? '4' : '2'));
         circle.setAttributeNS(null, 'class', 'territory-circle' + (!playerName && isMockGameMaker ? ' territory-circle--mock-unowned' : ''));
         circle.setAttributeNS(null, 'data-label', label);
         circle.setAttributeNS(null, 'role', 'button');
@@ -1297,6 +1314,10 @@ window.gameUtils = {
         );
         circle.style.opacity = '1';
         circle.style.pointerEvents = 'all';
+        if (playerName) {
+          circle.style.stroke = color;
+          circle.style.strokeWidth = '7';
+        }
         let mgmVis = null;
         if (useMgmDual) {
           mgmVis = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
@@ -1320,62 +1341,6 @@ window.gameUtils = {
           circle.setAttributeNS(null, 'class', 'territory-circle territory-mgm-hit');
         }
         const surface = mgmVis || circle;
-        const number = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        number.setAttributeNS(null, 'x', territory.x);
-        number.setAttributeNS(null, 'y', territory.y);
-        number.setAttributeNS(null, 'fill', textColor);
-        number.setAttributeNS(null, 'class', 'territory-number');
-        number.setAttributeNS(null, 'text-anchor', 'middle');
-        number.setAttributeNS(null, 'dominant-baseline', 'central');
-        number.setAttributeNS(null, 'font-size', String(Math.round(21 * mgmVisScale)));
-        number.setAttributeNS(null, 'font-family', 'Arial, sans-serif');
-        number.setAttributeNS(null, 'font-weight', 'bold');
-        number.setAttributeNS(null, 'data-label', label);
-        number.textContent = (
-          playerName
-            ? Number(troops) || 1
-            : isMockGameMaker
-              ? 1
-              : 0
-        ).toString().padStart(3, '0');
-        number.style.opacity = '1';
-        number.style.pointerEvents = 'all';
-        const pathNorm = (window.location.pathname || '').replace(/\\/g, '/').toLowerCase();
-        const isAttackUi =
-          pathNorm.endsWith('/attack.html') ||
-          gameState.phase === 'attack' ||
-          urlPhase === 'attack';
-        const isReinforceUi =
-          window.location.pathname.includes('reinforce.html') ||
-          gameState.phase === 'reinforce' ||
-          urlPhase === 'reinforce';
-        const useGlobalTerritoryHandler =
-          typeof window.handleTerritoryClick === 'function' &&
-          (isMockGameMaker || isAttackUi || isReinforceUi);
-        if (useGlobalTerritoryHandler) {
-          const troopsForHandler = playerName ? Number(troops) || 1 : 1;
-          const clickHandler = e => {
-            risqueCoreDebugLog(`[Core] Circle clicked: ${label}`);
-            window.handleTerritoryClick(label, playerName || 'None', troopsForHandler, e);
-            if (isMockGameMaker && e && typeof e.stopPropagation === 'function') e.stopPropagation();
-          };
-          const keydownHandler = e => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              risqueCoreDebugLog(`[Core] Circle keydown: ${label}`);
-              window.handleTerritoryClick(label, playerName || 'None', troopsForHandler, e);
-              if (isMockGameMaker && typeof e.stopPropagation === 'function') e.stopPropagation();
-            }
-          };
-          circle.addEventListener('click', clickHandler);
-          circle.addEventListener('keydown', keydownHandler);
-          number.addEventListener('click', clickHandler);
-          number.addEventListener('keydown', keydownHandler);
-        } else {
-          const clickHandler = () => this.handleTerritoryClick(label, circle, territory.r, gameState);
-          circle.addEventListener('click', clickHandler);
-          number.addEventListener('click', clickHandler);
-        }
         const baseR = Number(territory.r) || 30;
         const warpathLabelsFromState =
           gameState && Array.isArray(gameState.risquePublicCampaignWarpathLabels)
@@ -1483,38 +1448,286 @@ window.gameUtils = {
           transferPulseScale
         );
         const displayBaseR = baseR * combinedScale;
+        const MARKER_RING_STROKE_W = 7;
+        const MARKER_OUTLINE_STROKE_W = 3;
+        const markerOutlineRadiusOffset = (MARKER_RING_STROKE_W + MARKER_OUTLINE_STROKE_W) / 2;
+        const markerOutlineRadiusFor = rBase => Math.max(0, Number(rBase) + markerOutlineRadiusOffset);
+        let markerOutline = null;
+        if (playerName) {
+          markerOutline = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+          markerOutline.setAttributeNS(null, 'cx', territory.x);
+          markerOutline.setAttributeNS(null, 'cy', territory.y);
+          markerOutline.setAttributeNS(null, 'fill', 'none');
+          markerOutline.setAttributeNS(null, 'stroke', '#000000');
+          markerOutline.setAttributeNS(null, 'stroke-width', String(MARKER_OUTLINE_STROKE_W));
+          markerOutline.setAttributeNS(null, 'class', 'territory-circle-outline');
+          markerOutline.setAttributeNS(null, 'data-label', label);
+          markerOutline.setAttributeNS(null, 'aria-hidden', 'true');
+          markerOutline.style.pointerEvents = 'none';
+        }
+        let fillGeom = null;
+        if (playerName) {
+          const troopCount = Math.max(0, Math.floor(Number(troops) || 0));
+          /* Fluid height = ones digit: full when count is a multiple of 10 (50→full, 55→half). */
+          const mod10 = troopCount % 10;
+          const displayFillFrac =
+            troopCount <= 0 ? 0 : mod10 === 0 ? 1 : mod10 / 10;
+          const ringRForMarker =
+            useMgmDual && mgmVis ? displayBaseR * MGM_SELECT_R_MULT : displayBaseR;
+          const innerR = Math.max(6, ringRForMarker - Math.max(5, Math.round(ringRForMarker * 0.14)));
+          const fillH = troopCount > 0 ? Math.max(2, Math.round(innerR * 2 * displayFillFrac)) : 0;
+          const fillY = Math.round(territory.y + innerR - fillH);
+          const fillX = Math.round(territory.x - innerR);
+          const fillW = Math.round(innerR * 2);
+          /* Decade dots: 11–20→1 … 55→5, 50→4; losing one from 50→49 keeps 4 dots, fluid 9/10. */
+          const decadeNotchCount =
+            troopCount <= 10 ? 0 : Math.min(10, Math.floor((troopCount - 1) / 10));
+          const showCenturyGreenNotch = troopCount > 100;
+          fillGeom = {
+            innerR,
+            fillX,
+            fillY,
+            fillW,
+            fillH,
+            troopCount,
+            decadeNotchCount,
+            showCenturyGreenNotch,
+            ringRForMarker,
+          };
+        }
+        const risqueSvgNs = 'http://www.w3.org/2000/svg';
+        const numberTextContent = (
+          playerName
+            ? Number(troops) || 1
+            : isMockGameMaker
+              ? 1
+              : 0
+        ).toString().padStart(3, '0');
+        const pathNorm = (window.location.pathname || '').replace(/\\/g, '/').toLowerCase();
+        const isAttackUi =
+          pathNorm.endsWith('/attack.html') ||
+          gameState.phase === 'attack' ||
+          urlPhase === 'attack';
+        const isReinforceUi =
+          window.location.pathname.includes('reinforce.html') ||
+          gameState.phase === 'reinforce' ||
+          urlPhase === 'reinforce';
+        const useGlobalTerritoryHandler =
+          typeof window.handleTerritoryClick === 'function' &&
+          (isMockGameMaker || isAttackUi || isReinforceUi);
+        let number;
+        const numberPointerTargets = [];
+        number = document.createElementNS(risqueSvgNs, 'text');
+        number.setAttributeNS(null, 'x', String(territory.x));
+        number.setAttributeNS(null, 'y', String(territory.y));
+        number.setAttributeNS(null, 'class', 'territory-number');
+        number.setAttributeNS(null, 'text-anchor', 'middle');
+        number.setAttributeNS(null, 'dominant-baseline', 'central');
+        number.setAttributeNS(null, 'font-size', String(Math.round(21 * mgmVisScale)));
+        number.setAttributeNS(null, 'font-family', 'Arial, sans-serif');
+        number.setAttributeNS(null, 'font-weight', 'bold');
+        number.setAttributeNS(null, 'data-label', label);
+        number.textContent = numberTextContent;
+        number.style.opacity = '1';
+        number.style.pointerEvents = 'all';
+        if (playerName) {
+          number.setAttributeNS(null, 'fill', '#ffffff');
+          number.setAttributeNS(null, 'stroke', '#000000');
+          number.setAttributeNS(null, 'stroke-width', '5');
+          number.setAttributeNS(null, 'paint-order', 'stroke fill');
+        } else {
+          number.setAttributeNS(null, 'fill', '#ffffff');
+          number.setAttributeNS(null, 'stroke', '#000000');
+          number.setAttributeNS(null, 'stroke-width', String(Math.max(2.25, 3.0 * mgmVisScale) + 1));
+          number.setAttributeNS(null, 'paint-order', 'stroke fill');
+        }
+        numberPointerTargets.push(number);
+        if (useGlobalTerritoryHandler) {
+          const troopsForHandler = playerName ? Number(troops) || 1 : 1;
+          const clickHandler = e => {
+            risqueCoreDebugLog(`[Core] Circle clicked: ${label}`);
+            window.handleTerritoryClick(label, playerName || 'None', troopsForHandler, e);
+            if (isMockGameMaker && e && typeof e.stopPropagation === 'function') e.stopPropagation();
+          };
+          const keydownHandler = e => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              risqueCoreDebugLog(`[Core] Circle keydown: ${label}`);
+              window.handleTerritoryClick(label, playerName || 'None', troopsForHandler, e);
+              if (isMockGameMaker && typeof e.stopPropagation === 'function') e.stopPropagation();
+            }
+          };
+          circle.addEventListener('click', clickHandler);
+          circle.addEventListener('keydown', keydownHandler);
+          numberPointerTargets.forEach(el => {
+            el.addEventListener('click', clickHandler);
+            el.addEventListener('keydown', keydownHandler);
+          });
+        } else {
+          const clickHandler = () => this.handleTerritoryClick(label, circle, territory.r, gameState);
+          circle.addEventListener('click', clickHandler);
+          numberPointerTargets.forEach(el => el.addEventListener('click', clickHandler));
+        }
+        let troopFill = null;
+        let troopFillClip = null;
+        if (playerName && fillGeom && fillGeom.troopCount > 0) {
+          const { innerR, fillX, fillY, fillW, fillH } = fillGeom;
+          const clipId = `risque-troop-fill-clip-${String(label).replace(/[^a-z0-9_-]/gi, '_')}`;
+          troopFillClip = document.createElementNS(risqueSvgNs, 'clipPath');
+          troopFillClip.setAttributeNS(null, 'id', clipId);
+          troopFillClip.setAttributeNS(null, 'data-troop-fill-clip', label);
+          const fillRect = document.createElementNS(risqueSvgNs, 'rect');
+          fillRect.setAttributeNS(null, 'x', String(fillX));
+          fillRect.setAttributeNS(null, 'y', String(fillY));
+          fillRect.setAttributeNS(null, 'width', String(fillW));
+          fillRect.setAttributeNS(null, 'height', String(fillH));
+          troopFillClip.appendChild(fillRect);
+          troopFill = document.createElementNS(risqueSvgNs, 'circle');
+          troopFill.setAttributeNS(null, 'cx', territory.x);
+          troopFill.setAttributeNS(null, 'cy', territory.y);
+          troopFill.setAttributeNS(null, 'r', String(innerR));
+          /* Black player: dark grey fluid on black vessel; ring stays colorMap black (#333). */
+          const troopFluidFill = ownerColorKey === 'black' ? '#505050' : color;
+          troopFill.setAttributeNS(null, 'fill', troopFluidFill);
+          troopFill.setAttributeNS(null, 'class', 'territory-troop-fill');
+          troopFill.setAttributeNS(null, 'data-label', label);
+          troopFill.setAttributeNS(null, 'aria-hidden', 'true');
+          troopFill.setAttributeNS(null, 'clip-path', `url(#${clipId})`);
+          troopFill.style.opacity = '1';
+          troopFill.style.pointerEvents = 'none';
+          troopFill.setAttributeNS(null, 'stroke', 'none');
+          troopFill.setAttributeNS(null, 'stroke-width', '0');
+        }
+        let troopNotchGroup = null;
+        if (playerName && fillGeom && (fillGeom.decadeNotchCount > 0 || fillGeom.showCenturyGreenNotch)) {
+          const cx = territory.x;
+          const cy = territory.y;
+          const ringR = fillGeom.ringRForMarker;
+          const strokeBand = playerName ? 7 : 2;
+          const strokeInner = ringR - strokeBand / 2;
+          const strokeOuter = ringR + strokeBand / 2;
+          /* Inset from outer stroke so dots never touch the outside edge (1–2px gap). */
+          const outerPad = 2;
+          const dotR =
+            3.5 *
+            Math.max(1.5, Math.min(3.2, ringR * 0.052 * mgmVisScale));
+          const rOuterLimit = strokeOuter - outerPad - dotR;
+          const rInnerLimit = strokeInner + dotR + 0.5;
+          const bandBias = strokeInner + (strokeOuter - strokeInner) * 0.55;
+          const rCircleCenter = Math.max(rInnerLimit, Math.min(rOuterLimit, bandBias));
+          /* Decade dots: uniform white fill + 5px black rim for every player color. */
+          /* First dot at 7 o'clock, then every 36° clockwise. */
+          const notchBaseRad = (2 * Math.PI) / 3;
+          troopNotchGroup = document.createElementNS(risqueSvgNs, 'g');
+          troopNotchGroup.setAttributeNS(null, 'class', 'territory-troop-notches');
+          troopNotchGroup.setAttributeNS(null, 'data-label', label);
+          troopNotchGroup.setAttributeNS(null, 'aria-hidden', 'true');
+          troopNotchGroup.style.pointerEvents = 'none';
+          const addDotAt = (phi, fillHex, strokeHex = null, strokeW = 0) => {
+            const c = Math.cos(phi);
+            const s = Math.sin(phi);
+            const dot = document.createElementNS(risqueSvgNs, 'circle');
+            dot.setAttributeNS(null, 'cx', String(cx + rCircleCenter * c));
+            dot.setAttributeNS(null, 'cy', String(cy + rCircleCenter * s));
+            dot.setAttributeNS(null, 'r', String(dotR));
+            dot.setAttributeNS(null, 'fill', fillHex);
+            if (strokeHex && strokeW > 0) {
+              dot.setAttributeNS(null, 'stroke', strokeHex);
+              dot.setAttributeNS(null, 'stroke-width', String(strokeW));
+              dot.setAttributeNS(null, 'paint-order', 'stroke fill');
+            } else {
+              dot.setAttributeNS(null, 'stroke', 'none');
+              dot.setAttributeNS(null, 'stroke-width', '0');
+            }
+            troopNotchGroup.appendChild(dot);
+          };
+          for (let k = 0; k < fillGeom.decadeNotchCount; k++) {
+            const phi = notchBaseRad + (k * 2 * Math.PI) / 10;
+            addDotAt(phi, '#ffffff', '#000000', 5);
+          }
+          if (fillGeom.showCenturyGreenNotch) {
+            addDotAt(Math.PI / 2, '#16a34a', '#000000', 5);
+          }
+        }
         if (useMgmDual && mgmVis) {
           const visR = displayBaseR * MGM_SELECT_R_MULT;
+          let hoverDepth = 0;
           circle.setAttributeNS(null, 'r', popIn ? '0' : String(displayBaseR));
           mgmVis.setAttributeNS(null, 'r', popIn ? '0' : String(displayBaseR));
+          if (markerOutline) {
+            markerOutline.setAttributeNS(null, 'r', popIn ? '0' : String(markerOutlineRadiusFor(displayBaseR)));
+          }
           const bumpMgmRadii = () => {
             const hitR = displayBaseR + 5;
             circle.setAttributeNS(null, 'r', String(hitR));
             mgmVis.setAttributeNS(null, 'r', String(hitR * MGM_SELECT_R_MULT));
+            if (markerOutline) {
+              markerOutline.setAttributeNS(null, 'r', String(markerOutlineRadiusFor(hitR * MGM_SELECT_R_MULT)));
+            }
           };
           const resetMgmRadii = () => {
             circle.setAttributeNS(null, 'r', String(displayBaseR));
             mgmVis.setAttributeNS(null, 'r', String(visR));
+            if (markerOutline) {
+              markerOutline.setAttributeNS(null, 'r', String(markerOutlineRadiusFor(visR)));
+            }
           };
-          circle.addEventListener('mouseover', bumpMgmRadii);
-          circle.addEventListener('mouseout', resetMgmRadii);
-          number.addEventListener('mouseover', bumpMgmRadii);
-          number.addEventListener('mouseout', resetMgmRadii);
+          const onHoverEnter = () => {
+            hoverDepth += 1;
+            if (!deployTerritorySelected) bumpMgmRadii();
+          };
+          const onHoverLeave = () => {
+            hoverDepth = Math.max(0, hoverDepth - 1);
+            if (hoverDepth === 0) resetMgmRadii();
+          };
+          circle.addEventListener('mouseenter', onHoverEnter);
+          circle.addEventListener('mouseleave', onHoverLeave);
+          numberPointerTargets.forEach(el => {
+            el.addEventListener('mouseenter', onHoverEnter);
+            el.addEventListener('mouseleave', onHoverLeave);
+          });
         } else {
+          let hoverDepth = 0;
           circle.setAttributeNS(null, 'r', popIn ? '0' : String(displayBaseR));
-          circle.addEventListener('mouseover', () => circle.setAttributeNS(null, 'r', displayBaseR + 5));
-          circle.addEventListener('mouseout', () => {
+          if (markerOutline) {
+            markerOutline.setAttributeNS(null, 'r', popIn ? '0' : String(markerOutlineRadiusFor(displayBaseR)));
+          }
+          const bumpBaseRadii = () => {
+            circle.setAttributeNS(null, 'r', displayBaseR + 5);
+            if (markerOutline) markerOutline.setAttributeNS(null, 'r', String(markerOutlineRadiusFor(displayBaseR + 5)));
+          };
+          const resetBaseRadii = () => {
             circle.setAttributeNS(null, 'r', String(displayBaseR));
+            if (markerOutline) markerOutline.setAttributeNS(null, 'r', String(markerOutlineRadiusFor(displayBaseR)));
+          };
+          const onHoverEnter = () => {
+            hoverDepth += 1;
+            if (!deployTerritorySelected) bumpBaseRadii();
+          };
+          const onHoverLeave = () => {
+            hoverDepth = Math.max(0, hoverDepth - 1);
+            if (hoverDepth === 0) resetBaseRadii();
+          };
+          circle.addEventListener('mouseenter', onHoverEnter);
+          circle.addEventListener('mouseleave', onHoverLeave);
+          numberPointerTargets.forEach(el => {
+            el.addEventListener('mouseenter', onHoverEnter);
+            el.addEventListener('mouseleave', onHoverLeave);
           });
         }
+        if (markerOutline) svg.appendChild(markerOutline);
         if (mgmVis) svg.appendChild(mgmVis);
+        if (troopFillClip) svg.appendChild(troopFillClip);
         svg.appendChild(circle);
+        if (troopFill) svg.appendChild(troopFill);
+        if (troopNotchGroup) svg.appendChild(troopNotchGroup);
         svg.appendChild(number);
         if (useMgmDual && mgmVis && !popIn) {
           const visTargetR = displayBaseR * MGM_SELECT_R_MULT;
           requestAnimationFrame(function () {
             requestAnimationFrame(function () {
               mgmVis.setAttributeNS(null, 'r', String(visTargetR));
+              if (markerOutline) markerOutline.setAttributeNS(null, 'r', String(markerOutlineRadiusFor(visTargetR)));
             });
           });
         }
@@ -1526,6 +1739,7 @@ window.gameUtils = {
           requestAnimationFrame(function () {
             requestAnimationFrame(function () {
               circle.setAttributeNS(null, 'r', String(displayBaseR));
+              if (markerOutline) markerOutline.setAttributeNS(null, 'r', String(markerOutlineRadiusFor(displayBaseR)));
               number.style.opacity = '1';
             });
           });

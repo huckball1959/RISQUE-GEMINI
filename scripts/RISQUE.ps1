@@ -1,16 +1,17 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  RISQUE-BETA launcher — flat save folder, Chromium download path, then Local vs GitHub; dual displays by default.
+  RISQUE-GEMINI launcher — flat save folder, Chromium download path, then Local vs hosted GEMINI; dual displays by default.
 
 .DESCRIPTION
- - Ensures the save folder exists (default C:\risque\save, or RISQUE_DOWNLOAD_PATH). No subfolders, no background scripts, no disk API.
+ - Ensures the save folder exists (default C:\risque\save, or RISQUE_DOWNLOAD_PATH).
+ - Local launch only: starts a tiny loopback save API (risque-disk-server.ps1 on 127.0.0.1, default port 5599) so the game writes DD.json / rNpM*.json into the save root with zero browser folder picks. Hosted launch skips the API.
  - Sets Chromium default download directory to that folder (JSON downloads land there; browser profile lives under %TEMP%).
  - Writes risque-launcher-paths.json beside the repo (gitignored) for path hints.
- - Asks: local (this clone) or GitHub Pages, then opens host on the primary display (work area size, tabs visible) and
+ - Asks: local (this clone) or hosted GEMINI (GitHub Pages), then opens host on the primary display (work area size, tabs visible) and
     public TV on the secondary (Win32 move + F11). Single-window mode is opt-in (-SingleWindow).
 
-  Local clone always uses file:// (opens HTML/JS straight from disk — no local HTTP listener).
+  Local clone uses file:// for pages; a separate minimal HTTP listener on localhost is used only for save/replay JSON (not for serving the game).
 
   Double-click: scripts\RISQUE.bat
 
@@ -24,7 +25,7 @@
   Open hosted build instead of local clone (skips menu).
 
 .PARAMETER HostedUrl
-  Override URL when using -Hosted (should point at index.html for the site).
+  Override URL when using -Hosted (index.html or game.html; default is GEMINI game.html with login flow).
 
 .PARAMETER File
   Legacy alias for local file:// launch (same as default).
@@ -33,7 +34,10 @@
   One browser window only (no dual-monitor flow).
 
 .PARAMETER NoEmergencyWatcher
-  Legacy; ignored (no launcher-side background watchers).
+    Legacy; ignored (no launcher-side background watchers).
+
+.PARAMETER NoReplayDebug
+    Local file:// only: do not append replayDebug=1 (skips console [ReplayDebug] tape logging). Default is ON for local launches so scripts\RISQUE.bat needs no extra clicks.
 
 .NOTES
   Dual-monitor Chromium uses a temp user-data-dir, download directory forced to the save root via Preferences.
@@ -46,12 +50,13 @@ param(
     [string]$HostedUrl = "",
     [switch]$File,
     [switch]$SingleWindow,
-    [switch]$NoEmergencyWatcher
+    [switch]$NoEmergencyWatcher,
+    [switch]$NoReplayDebug
 )
 
 $ErrorActionPreference = "Stop"
 
-$DefaultHostedUrl = "https://huckball1959.github.io/RISQUE-BETA/index.html"
+$DefaultHostedUrl = "https://huckball1959.github.io/RISQUE-GEMINI/game.html?phase=login&loginLegacyNext=game.html%3Fphase%3DplayerSelect%26selectKind%3DfirstCard&loginLoadRedirect=game.html%3Fphase%3Dcardplay%26legacyNext%3Dincome.html"
 
 $SaveRoot = if ([string]::IsNullOrWhiteSpace($env:RISQUE_DOWNLOAD_PATH)) {
     "C:\risque\save"
@@ -87,7 +92,10 @@ $BrowserProfilePublic = Join-Path $env:TEMP "risque-browser-profiles\public"
 $RepoRoot = Split-Path -Parent $ScriptDir
 
 function Write-RisqueLauncherPaths {
-    param([string]$GameDir)
+    param(
+        [string]$GameDir,
+        [string]$DiskApiBase = ""
+    )
     $payload = [ordered]@{
         saveRoot               = $SaveRoot
         gameDir                = $GameDir
@@ -104,7 +112,7 @@ function Write-RisqueLauncherPaths {
         activeSessionReplayDir = $SaveRoot
         archiveDir             = $SaveRoot
         archiveShortcut        = ""
-        diskApiBase            = ""
+        diskApiBase            = $DiskApiBase
         generatedAtUtc         = (Get-Date).ToUniversalTime().ToString("o")
         psVersion              = $PSVersionTable.PSVersion.ToString()
     }
@@ -118,6 +126,57 @@ function Write-RisqueLauncherPaths {
     catch {
         Write-Warning "Could not write $repoCopy"
     }
+}
+
+function Start-RisqueLocalDiskApi {
+    # Starts one hidden HttpListener helper so game.js can POST replay/session JSON into the save folder (no picker).
+    param(
+        [Parameter(Mandatory = $true)][string]$SaveRootPath,
+        [int]$Port
+    )
+    $base = "http://127.0.0.1:$Port"
+    try {
+        $resp = Invoke-WebRequest -Uri "$base/api/health" -UseBasicParsing -TimeoutSec 2
+        if ($resp.StatusCode -eq 200) {
+            Write-Host "Save helper already running: $base" -ForegroundColor DarkGray
+            return $base
+        }
+    }
+    catch {
+        # not listening
+    }
+    $serverScript = Join-Path $ScriptDir "risque-disk-server.ps1"
+    if (-not (Test-Path -LiteralPath $serverScript)) {
+        Write-Warning ("Missing disk server script: {0} (keep repo scripts folder intact)." -f $serverScript)
+        return ""
+    }
+    try {
+        Start-Process -FilePath "powershell.exe" -ArgumentList @(
+            "-NoProfile", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass",
+            "-File", $serverScript,
+            "-SaveRoot", $SaveRootPath,
+            "-Port", $Port
+        ) -WindowStyle Hidden
+    }
+    catch {
+        Write-Warning "Could not start save helper: $($_.Exception.Message)"
+        return ""
+    }
+    $deadline = (Get-Date).AddSeconds(6)
+    while ((Get-Date) -lt $deadline) {
+        try {
+            $r2 = Invoke-WebRequest -Uri "$base/api/health" -UseBasicParsing -TimeoutSec 1
+            if ($r2.StatusCode -eq 200) {
+                Write-Host "Session files will save under: $SaveRootPath" -ForegroundColor Green
+                return $base
+            }
+        }
+        catch {
+            Start-Sleep -Milliseconds 250
+        }
+    }
+    Write-Warning "Save helper did not start on $base (port in use or blocked). Replays stay in the browser until this works."
+    return ""
 }
 
 function Get-RisqueBrowserPath {
@@ -174,15 +233,40 @@ function Get-RisquePublicTvUrlFromIndexUrl {
     }
 }
 
+function Add-RisqueReplayDebugQuery {
+    param(
+        [Parameter(Mandatory)][string]$Url,
+        [ValidateSet('1', '0')][string]$Value = '1'
+    )
+    if ([string]::IsNullOrWhiteSpace($Url)) { return $Url }
+    if ($Url -match '[?&]replayDebug=') { return $Url }
+    $sep = $(if ($Url -match '\?') { '&' } else { '?' })
+    return $Url + $sep + 'replayDebug=' + $Value
+}
+
 function Get-RisqueLocalDiskHostPublicUrls {
-    param([Parameter(Mandatory)][string]$RepoRootPath)
+    param(
+        [Parameter(Mandatory)][string]$RepoRootPath,
+        [switch]$ReplayDebug,
+        [switch]$ReplayDebugOff
+    )
     $unixRoot = $RepoRootPath.TrimEnd('\').Replace('\', '/')
     if ([string]::IsNullOrWhiteSpace($unixRoot)) {
         throw "Empty repo root for local file URLs."
     }
+    $hostU = "file:///$unixRoot/index.html"
+    $pubU = "file:///$unixRoot/game.html?display=public"
+    if ($ReplayDebugOff) {
+        $hostU = Add-RisqueReplayDebugQuery -Url $hostU -Value '0'
+        $pubU = Add-RisqueReplayDebugQuery -Url $pubU -Value '0'
+    }
+    elseif ($ReplayDebug) {
+        $hostU = Add-RisqueReplayDebugQuery -Url $hostU -Value '1'
+        $pubU = Add-RisqueReplayDebugQuery -Url $pubU -Value '1'
+    }
     return @{
-        Host   = "file:///$unixRoot/index.html"
-        Public = "file:///$unixRoot/game.html?display=public"
+        Host   = $hostU
+        Public = $pubU
     }
 }
 
@@ -373,8 +457,6 @@ catch {
     exit 1
 }
 
-Write-RisqueLauncherPaths -GameDir $RepoRoot
-
 $showMenu = (
     -not $SkipMenu -and
     -not $Hosted -and
@@ -383,11 +465,11 @@ $showMenu = (
 
 if ($showMenu) {
     Write-Host ""
-    Write-Host " RISQUE-BETA - which build?" -ForegroundColor Cyan
+    Write-Host " RISQUE-GEMINI - which build?" -ForegroundColor Cyan
     Write-Host '  (Host opens on your main display; public TV on the second - fullscreen / positioned automatically.)'
     Write-Host ""
     Write-Host "  1  Local game  - this repo from disk (file://)"
-    Write-Host "  2  GitHub game - hosted site (GitHub Pages)"
+    Write-Host "  2  Web game    - GEMINI on GitHub Pages (login URL)"
     Write-Host ""
     $choice = Read-Host "Enter 1 or 2"
     $c = if ($null -eq $choice) { "" } else { $choice.Trim() }
@@ -398,6 +480,22 @@ if ($showMenu) {
     else {
         $Hosted = $false
     }
+}
+
+$diskPort = 5599
+if (-not [string]::IsNullOrWhiteSpace($env:RISQUE_DISK_PORT)) {
+    $dp = 0
+    if ([int]::TryParse($env:RISQUE_DISK_PORT.Trim(), [ref]$dp) -and $dp -gt 0 -and $dp -lt 65536) {
+        $diskPort = $dp
+    }
+}
+$diskApiBaseForJson = ""
+if ($Hosted) {
+    Write-RisqueLauncherPaths -GameDir $RepoRoot -DiskApiBase ""
+}
+else {
+    $diskApiBaseForJson = Start-RisqueLocalDiskApi -SaveRootPath $SaveRoot -Port $diskPort
+    Write-RisqueLauncherPaths -GameDir $RepoRoot -DiskApiBase $diskApiBaseForJson
 }
 
 $indexLocal = Join-Path $RepoRoot "index.html"
@@ -434,7 +532,16 @@ if ($launchUrl -match '(?i)^https?:') {
     $publicTvUrl = Get-RisquePublicTvUrlFromIndexUrl -IndexUrl $launchUrl
 }
 else {
-    $pair = Get-RisqueLocalDiskHostPublicUrls -RepoRootPath $RepoRoot
+    $replayDbgOn = $true
+    if ($NoReplayDebug -or $env:RISQUE_NO_REPLAY_DEBUG -eq '1') {
+        $replayDbgOn = $false
+    }
+    $pair = if ($replayDbgOn) {
+        Get-RisqueLocalDiskHostPublicUrls -RepoRootPath $RepoRoot -ReplayDebug
+    }
+    else {
+        Get-RisqueLocalDiskHostPublicUrls -RepoRootPath $RepoRoot -ReplayDebugOff
+    }
     $launchUrl = $pair.Host
     $publicTvUrl = $pair.Public
 }

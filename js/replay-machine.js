@@ -4,12 +4,46 @@
 (function () {
   "use strict";
 
-  /** Matches launcher default (scripts/RISQUE.ps1); browsers cannot open this path without a folder pick. */
-  var RISQUE_DEFAULT_WINDOWS_SAVE_FOLDER = "C:\\risque\\save";
+  /** Same key as host game-shell — public game.html polls this for the TV map. */
+  var RISQUE_PUBLIC_MIRROR_LS_KEY = "risquePublicMirrorState";
+  var __risqueReplayMirrorSeqCounter = 0;
+
+  /**
+   * Push the current replay board into localStorage so game.html?display=public can animate the map in sync.
+   * Does not touch the host session STORAGE_KEY (replay-machine never loads game-shell).
+   */
+  function risqueReplayMirrorPushToPublicBoard(gs, opts) {
+    opts = opts || {};
+    if (!gs || typeof gs !== "object") return;
+    try {
+      var payload = JSON.parse(JSON.stringify(gs));
+      if (opts.playbackOff) {
+        delete payload.risqueReplayPlaybackActive;
+        delete payload.phaseReplayIndex;
+      } else {
+        payload.risqueReplayPlaybackActive = true;
+      }
+      delete payload.risqueReplayTape;
+      delete payload.risqueReplayByRound;
+      delete payload.risquePublicReplayRound;
+      delete payload.risquePlayedCardsGallery;
+      delete payload.risqueLuckyLedger;
+      delete payload.phaseReplayIndex;
+      if (Array.isArray(payload.risqueCombatLogTail) && payload.risqueCombatLogTail.length > 48) {
+        payload.risqueCombatLogTail = payload.risqueCombatLogTail.slice(-48);
+      }
+      __risqueReplayMirrorSeqCounter += 1;
+      payload.risquePublicMirrorSeq = __risqueReplayMirrorSeqCounter;
+      localStorage.setItem(RISQUE_PUBLIC_MIRROR_LS_KEY, JSON.stringify(payload));
+    } catch (e) {
+      /* Quota, privacy mode, or non-persistent storage — TV may stay on last live frame. */
+    }
+  }
+  window.risqueReplayMirrorPushToPublicBoard = risqueReplayMirrorPushToPublicBoard;
 
   var TAPE_VERSION = 2;
-  var MS_DEPLOY = 90;
-  var MS_BATTLE = 140;
+  var MS_DEPLOY = 130;
+  var MS_BATTLE = 220;
   /** Granular attack-only tapes (and glued Wayback merges): readable battle pacing vs full-session tape. */
   var MS_BATTLE_GRANULAR_GLUE = 290;
   /** Extra beat when glued segments jump to the next player's battle frames. */
@@ -17,7 +51,7 @@
   /** Hold after elimination splash so flash + message are readable (scaled by playback speed). */
   var MS_ELIMINATION = 1300;
   var MS_INIT = 80;
-  var MS_DEAL = 95;
+  var MS_DEAL = 150;
   var MS_REPLAY_START_HOLD = 450;
   /** After a successful load, start playback automatically (pause with PAUSE or STOP). */
   var AUTO_START_PLAYBACK_AFTER_LOAD = false;
@@ -252,29 +286,59 @@
     return "black";
   }
 
+  /**
+   * Merged tapes / disk segments can spell the same human player with different casing between frames.
+   * Strict === would create two ghost players and split the map until the next frame — wrong colors
+   * (especially visible across a battle delay) then self-correct when casing lines up again.
+   */
+  function replayFindPlayerByOwner(players, ownerRaw) {
+    if (!players || ownerRaw == null) return null;
+    var own = String(ownerRaw).trim();
+    if (!own) return null;
+    var i;
+    for (i = 0; i < players.length; i++) {
+      var x = players[i];
+      if (x && String(x.name) === own) return x;
+    }
+    var low = own.toLowerCase();
+    var hit = null;
+    for (i = 0; i < players.length; i++) {
+      var x2 = players[i];
+      if (!x2 || x2.name == null) continue;
+      if (String(x2.name).trim().toLowerCase() === low) {
+        if (hit) return null;
+        hit = x2;
+      }
+    }
+    return hit;
+  }
+
   function applyBoard(gs, board) {
     if (!gs || !gs.players || !board) return;
     var replay = !!gs.risqueReplayPlaybackActive;
     if (replay) {
-      var need = {};
+      var canonByLower = {};
       Object.keys(board).forEach(function (label) {
         var cell = board[label];
-        if (cell && cell.owner) need[String(cell.owner)] = true;
+        if (!cell || !cell.owner) return;
+        var raw = String(cell.owner).trim();
+        if (!raw) return;
+        var low = raw.toLowerCase();
+        if (Object.prototype.hasOwnProperty.call(canonByLower, low)) return;
+        var existing = replayFindPlayerByOwner(gs.players, raw);
+        canonByLower[low] = existing ? String(existing.name) : raw;
       });
-      Object.keys(need).forEach(function (nm) {
-        var hit = gs.players.some(function (x) {
-          return x && String(x.name) === nm;
+      Object.keys(canonByLower).forEach(function (low) {
+        var nm = canonByLower[low];
+        if (replayFindPlayerByOwner(gs.players, nm)) return;
+        gs.players.push({
+          name: nm,
+          territories: [],
+          cards: [],
+          cardCount: 0,
+          color: replayGhostColorForOwner(gs, nm),
+          risqueReplayGhostPlayer: true
         });
-        if (!hit) {
-          gs.players.push({
-            name: nm,
-            territories: [],
-            cards: [],
-            cardCount: 0,
-            color: replayGhostColorForOwner(gs, nm),
-            risqueReplayGhostPlayer: true
-          });
-        }
       });
     }
     gs.players.forEach(function (p) {
@@ -284,9 +348,11 @@
       var cell = board[label];
       if (!cell || !cell.owner) return;
       var own = String(cell.owner);
-      var pl = gs.players.find(function (x) {
-        return x && String(x.name) === own;
-      });
+      var pl = replay
+        ? replayFindPlayerByOwner(gs.players, own)
+        : gs.players.find(function (x) {
+            return x && String(x.name) === own;
+          });
       if (pl) {
         pl.territories.push({
           name: label,
@@ -342,7 +408,10 @@
         add(lab);
         return;
       }
-      if (String(a.owner) !== String(b.owner) || (Number(a.troops) || 0) !== (Number(b.troops) || 0)) {
+      if (
+        String(a.owner).trim().toLowerCase() !== String(b.owner).trim().toLowerCase() ||
+        (Number(a.troops) || 0) !== (Number(b.troops) || 0)
+      ) {
         add(lab);
       }
     });
@@ -372,6 +441,106 @@
       }
     }
     return out;
+  }
+
+  /** Numeric `ev.round` when present; ignores deal/init special-cases (caller filters by segment). */
+  function replayExplicitRoundStamp(ev) {
+    if (!ev || ev.round == null) return null;
+    var n = typeof ev.round === "number" ? ev.round : parseInt(ev.round, 10);
+    if (!isFinite(n) || n < 1) return null;
+    return Math.floor(n);
+  }
+
+  /**
+   * Granular segment files sometimes embed *battle* frames stamped with an older round after later-round
+   * battles already appeared (e.g. two round-4 boards at the head of a replayRound-5 pack). Playing them
+   * rewinds the map.
+   *
+   * We only strip **battle** boards using a high-water mark from **init + battle** stamps. Deploy/reinforce
+   * and elimination stamps can lead or lag gs.round in-session; feeding them into maxR caused legitimate
+   * end-of-round battles to be dropped (jump straight to “finish”, missing last hop, sporadic flashes).
+   */
+  function stripBackwardStampedRoundBoardEvents(events) {
+    if (!Array.isArray(events)) return { events: [], skipped: 0, message: "" };
+    if (!events.length) return { events: events.slice(), skipped: 0, message: "" };
+    var maxBattleR = 0;
+    var out = [];
+    var skipped = 0;
+    var exStale = null;
+    var exPeak = null;
+    var i;
+    for (i = 0; i < events.length; i++) {
+      var ev = events[i];
+      if (!ev || !ev.type) {
+        out.push(ev);
+        continue;
+      }
+      if (ev.type === "init") {
+        out.push(ev);
+        maxBattleR = Math.max(maxBattleR, 1);
+        continue;
+      }
+      if (ev.type === "board") {
+        var seg = ev.segment != null ? String(ev.segment) : "";
+        /* Recorder forces deal to round 1 — never treat as a timeline regression. */
+        if (seg === "deal") {
+          out.push(ev);
+          continue;
+        }
+        if (seg === "battle") {
+          var r = replayExplicitRoundStamp(ev);
+          if (r != null && r < maxBattleR) {
+            skipped++;
+            if (exStale == null) {
+              exStale = r;
+              exPeak = maxBattleR;
+            }
+            if (typeof window.risqueReplayDebugIsOn === "function" && window.risqueReplayDebugIsOn()) {
+              try {
+                console.log(
+                  "[ReplayDebug] strip drop",
+                  seg,
+                  "stamp=" + r,
+                  "maxBattleWas=" + maxBattleR,
+                  "rec=" + (ev.recordedForPlayer != null ? String(ev.recordedForPlayer) : "")
+                );
+              } catch (eSd) {
+                /* ignore */
+              }
+            }
+            continue;
+          }
+          out.push(ev);
+          if (r != null) maxBattleR = Math.max(maxBattleR, r);
+          continue;
+        }
+        /* deploy / reinforce: never strip; stamp does not advance battle watermark. */
+        out.push(ev);
+        continue;
+      }
+      if (ev.type === "elimination") {
+        out.push(ev);
+        continue;
+      }
+      out.push(ev);
+    }
+    var msg = "";
+    if (skipped > 0 && exStale != null && exPeak != null) {
+      msg =
+        "Replay: removed " +
+        skipped +
+        " out-of-sequence battle frame(s) stamped round " +
+        exStale +
+        " after round " +
+        exPeak +
+        " battle line had advanced (stale segment tail/head).";
+    } else if (skipped > 0) {
+      msg =
+        "Replay: removed " +
+        skipped +
+        " out-of-sequence battle frame(s) stamped earlier than the current battle timeline.";
+    }
+    return { events: out, skipped: skipped, message: msg };
   }
 
   function getEventRound(ev) {
@@ -540,6 +709,32 @@
 
   var MAX_SEGMENT_CHIPS = 55;
 
+  /** DD first, then r1p1, r1p2, …, r2p1, …; session / replayN names sort last (tie-break: savedAt). */
+  function waybackSegmentPackSortCmp(a, b) {
+    function keyFromFilename(fname) {
+      var s = String(fname || "").trim().toLowerCase();
+      if (s === "dd.json") return { t: 0, r: 0, p: 0 };
+      if (s === "replay-deal.json") return { t: 1, r: 0, p: 0 };
+      var m = /^r(\d+)p(\d+)\.json$/i.exec(s);
+      if (m) {
+        return { t: 2, r: parseInt(m[1], 10) || 0, p: parseInt(m[2], 10) || 0 };
+      }
+      if (s === "replay-full.json" || s === "risque-full-replay.json" || s === "rqwb-full-replay.json") {
+        return { t: 80, r: 0, p: 0 };
+      }
+      if (/^replay\d+\.json$/i.test(s)) return { t: 70, r: 0, p: 0 };
+      return { t: 50, r: 0, p: 0 };
+    }
+    var fa = a && a.__risqueSourceFilename ? String(a.__risqueSourceFilename) : "";
+    var fb = b && b.__risqueSourceFilename ? String(b.__risqueSourceFilename) : "";
+    var ka = keyFromFilename(fa);
+    var kb = keyFromFilename(fb);
+    if (ka.t !== kb.t) return ka.t - kb.t;
+    if (ka.r !== kb.r) return ka.r - kb.r;
+    if (ka.p !== kb.p) return ka.p - kb.p;
+    return packSavedAtMs(a) - packSavedAtMs(b);
+  }
+
   function segmentUiLabelFromFilename(name) {
     var s = String(name || "").trim();
     if (!s) return "?";
@@ -549,15 +744,18 @@
   }
 
   /**
-   * One chip per loaded segment file (DD + rNpM), up to {@link MAX_SEGMENT_CHIPS}, for long matches.
+   * One chip per disk segment file (DD + rNpM), up to {@link MAX_SEGMENT_CHIPS}.
+   * Only packs with __risqueSourceFilename (folder / file picker). Live host bootstrap uses round chips.
    */
   function buildSegmentSeekHints(playbackEvents, sourcePacks) {
-    if (!playbackEvents || !playbackEvents.length || !sourcePacks || sourcePacks.length < 2) {
+    if (!playbackEvents || !playbackEvents.length || !sourcePacks || !sourcePacks.length) {
       return null;
     }
-    var sorted = sourcePacks.slice().sort(function (a, b) {
-      return packSavedAtMs(a) - packSavedAtMs(b);
+    var named = sourcePacks.filter(function (p) {
+      return p && p.__risqueSourceFilename && String(p.__risqueSourceFilename).trim();
     });
+    if (!named.length) return null;
+    var sorted = named.slice().sort(waybackSegmentPackSortCmp);
     var hints = [];
     var searchFrom = 0;
     var pi;
@@ -617,7 +815,7 @@
       }
       hints.push({ label: label, seekIndex: idx });
     }
-    return hints.length > 1 ? hints : null;
+    return hints.length ? hints : null;
   }
 
   /** Explicit round stamps (plus init→R1) for seeking into gap-filled rounds when stamps skip integers. */
@@ -662,8 +860,13 @@
     if (collapsed.length && collapsed[0].index > 0) {
       collapsed.unshift({ index: 0, round: 1 });
     }
+    /*
+     * Never duplicate the same tape index in consecutive anchors: an extra {0,1} before {0,R} made
+     * replaySeekIndexForRound use L.index===R.index and jump ~80% through the tape for mid-round seeks
+     * (felt like "R5 is haunted" when jumping round chips late game).
+     */
     if (collapsed.length && collapsed[0].index === 0 && collapsed[0].round > 1) {
-      collapsed.unshift({ index: 0, round: 1 });
+      collapsed[0] = { index: 0, round: 1 };
     }
     return collapsed;
   }
@@ -684,6 +887,13 @@
       if (inferred[j] === t) return j;
     }
 
+    for (j = 0; j < pe.length; j++) {
+      var evR = pe[j];
+      if (!evR || evR.round == null) continue;
+      var rawR = Math.floor(Number(evR.round));
+      if (isFinite(rawR) && rawR === t) return j;
+    }
+
     var anchors = collectStampAnchorsForSeek(pe);
     var ai;
     for (ai = 0; ai < anchors.length - 1; ai++) {
@@ -693,8 +903,7 @@
         var spanR = R.round - L.round;
         if (spanR <= 0) continue;
         if (L.index === R.index) {
-          var spread = Math.max(0, pe.length - 1);
-          return Math.max(0, Math.min(pe.length - 1, Math.floor((spread * (t - L.round)) / spanR)));
+          continue;
         }
         var spanI = R.index - L.index;
         if (spanI > 0) {
@@ -813,24 +1022,77 @@
     }
   }
 
-  function setWatchRoundIdle() {
-    var el = document.getElementById("risque-replay-watch-round");
-    if (!el) return;
-    el.textContent = "—";
+  function clearReplayChipHighlight() {
+    var list = document.getElementById("risque-replay-file-list");
+    if (!list) return;
+    var marked = list.querySelectorAll(".risque-replay-round-chip--active");
+    var mi;
+    for (mi = 0; mi < marked.length; mi++) marked[mi].classList.remove("risque-replay-round-chip--active");
   }
 
-  function setWatchRoundDisplay(n, labelOverride) {
-    var el = document.getElementById("risque-replay-watch-round");
-    if (!el) return;
-    if (labelOverride != null && String(labelOverride).length) {
-      el.textContent = String(labelOverride);
+  /**
+   * Highlights the chip for the current tape position: segment files (DD / rNpM) by seek index,
+   * or round chips (R1, R2, …) by stamped round.
+   * Segment chips use phaseReplayIndex (next event to play), not last-applied index — otherwise a seek
+   * to r1p2 leaves "last applied" on the last r1p1 frame and the UI flashes r1p1 until the next step().
+   */
+  function updateReplayChipHighlight(gs) {
+    var list = document.getElementById("risque-replay-file-list");
+    if (!list) return;
+    clearReplayChipHighlight();
+    if (!gs || !gs.risqueReplayPlaybackActive) return;
+
+    var pack = window.__risqueReplayLoadedPack;
+    var chips = list.querySelectorAll("button.risque-replay-round-chip");
+    if (!chips.length) return;
+
+    var phaseIdx = gs.phaseReplayIndex != null ? Math.floor(Number(gs.phaseReplayIndex)) || 0 : 0;
+    if (phaseIdx < 0) phaseIdx = 0;
+
+    var hints = pack && Array.isArray(pack.__segmentSeekHints) ? pack.__segmentSeekHints : null;
+    var firstSeek = chips[0] && chips[0].getAttribute("data-seek-index");
+    if (hints && hints.length && firstSeek != null) {
+      var refPos = phaseIdx;
+      var pick = 0;
+      var hi;
+      for (hi = hints.length - 1; hi >= 0; hi--) {
+        var six = parseInt(String(hints[hi].seekIndex), 10) || 0;
+        if (refPos >= six) {
+          pick = hi;
+          break;
+        }
+      }
+      if (pick < chips.length) chips[pick].classList.add("risque-replay-round-chip--active");
       return;
     }
-    if (n == null || !isFinite(Number(n)) || Number(n) < 1) {
-      el.textContent = "—";
+
+    var n = 1;
+    if (gs.risqueReplayMachineHudPhase === "deal") {
+      n = 1;
     } else {
-      el.textContent = String(Math.floor(Number(n)));
+      var raw = gs.risqueReplayHudRound;
+      n = typeof raw === "number" ? raw : parseInt(raw, 10);
+      if (!isFinite(n) || n < 1) {
+        var r2 = gs.round;
+        n = typeof r2 === "number" ? r2 : parseInt(r2, 10);
+      }
+      if (!isFinite(n) || n < 1) n = 1;
     }
+    var chip = list.querySelector(
+      '.risque-replay-round-chip[data-round="' + String(Math.floor(n)) + '"]'
+    );
+    if (chip) chip.classList.add("risque-replay-round-chip--active");
+  }
+
+  /** Tape JSON files in this load (folder refresh or file picker). Hidden for live bootstrap from host. */
+  function updateReplayTapeCountLine(n) {
+    var el = document.getElementById("risque-replay-tape-count");
+    if (!el) return;
+    if (n == null || !isFinite(Number(n)) || Number(n) < 1) {
+      el.textContent = "";
+      return;
+    }
+    el.textContent = "TOTAL REPLAY FILES=" + String(Math.floor(Number(n)));
   }
 
   function updateRoundsLoadedUi(sourcePacks, mergedPack) {
@@ -904,7 +1166,10 @@
         btn2.type = "button";
         btn2.className = "risque-replay-round-chip";
         btn2.setAttribute("data-round", String(rnf));
-        btn2.setAttribute("aria-label", "Round " + String(rnf) + ", saved " + formatReplaySavedAtChip(packSavedAtMs(p)));
+        btn2.setAttribute(
+          "aria-label",
+          "Round " + String(rnf) + ", saved " + formatReplaySavedAtChip(packSavedAtMs(p))
+        );
         btn2.title = formatReplaySavedAtChip(packSavedAtMs(p));
         var rSpan2 = document.createElement("span");
         rSpan2.className = "risque-replay-round-chip-r";
@@ -1039,7 +1304,8 @@
     resetReplayBoardClean();
     setTransportStandbyLoaded();
     updateTransportPlayPauseUi(null);
-    setWatchRoundIdle();
+    clearReplayChipHighlight();
+    updateReplayTapeCountLine(null);
   }
 
   function removeReplayRoundHud() {
@@ -1052,25 +1318,29 @@
       removeReplayRoundHud();
       var staleBar = document.getElementById("risque-replay-bar");
       if (staleBar && staleBar.parentNode) staleBar.parentNode.removeChild(staleBar);
+      clearReplayChipHighlight();
       return;
     }
-    if (gs.risqueReplayMachineHudPhase === "deal") {
-      setWatchRoundDisplay(null, "Dealing");
-      return;
-    }
-    var raw = gs.risqueReplayHudRound;
-    var n = typeof raw === "number" ? raw : parseInt(raw, 10);
-    if (!isFinite(n) || n < 1) {
-      var r2 = gs.round;
-      n = typeof r2 === "number" ? r2 : parseInt(r2, 10);
-    }
-    if (!isFinite(n) || n < 1) n = 1;
-    setWatchRoundDisplay(n);
+    updateReplayChipHighlight(gs);
   }
 
   function removeReplaySplash() {
     var el = document.getElementById("risque-replay-splash");
     if (el && el.parentNode) el.parentNode.removeChild(el);
+    if (window.gameState && typeof window.gameState === "object") {
+      delete window.gameState.risquePublicReplayEliminationSplash;
+    }
+    try {
+      if (
+        window.gameState &&
+        window.gameState.risqueReplayPlaybackActive &&
+        typeof risqueReplayMirrorPushToPublicBoard === "function"
+      ) {
+        risqueReplayMirrorPushToPublicBoard(window.gameState);
+      }
+    } catch (eRmMir) {
+      /* ignore */
+    }
   }
 
   function showEliminationSplash(conqueror, defeated) {
@@ -1087,6 +1357,20 @@
     line.textContent = conq + " has conquered " + def;
     root.appendChild(line);
     document.body.appendChild(root);
+    if (window.gameState && typeof window.gameState === "object") {
+      window.gameState.risquePublicReplayEliminationSplash = {
+        conqueror: conq,
+        defeated: def,
+        at: Date.now()
+      };
+    }
+    try {
+      if (window.gameState && typeof risqueReplayMirrorPushToPublicBoard === "function") {
+        risqueReplayMirrorPushToPublicBoard(window.gameState);
+      }
+    } catch (eSpMir) {
+      /* ignore */
+    }
   }
 
   function removeReplayStartOverlay() {
@@ -1149,7 +1433,7 @@
       setReplayEndedLine(true);
     }
     updateTransportPlayPauseUi(null);
-    setWatchRoundIdle();
+    clearReplayChipHighlight();
     if (__timer != null) {
       clearTimeout(__timer);
       __timer = null;
@@ -1164,6 +1448,31 @@
       delete window.gameState.phaseReplayIndex;
       delete window.gameState.risqueReplayBattleFlashLabels;
       delete window.gameState.risqueReplayMachineHudPhase;
+    }
+    var replayWinOneShot = false;
+    if (
+      opts.replayEnded &&
+      window.gameState &&
+      Array.isArray(window.gameState.players) &&
+      window.gameState.players.length === 1
+    ) {
+      var pWin = window.gameState.players[0];
+      if (pWin && pWin.name) {
+        window.gameState.risqueGameWinImmediate = true;
+        window.gameState.winner = String(pWin.name);
+        replayWinOneShot = true;
+      }
+    }
+    try {
+      if (window.gameState && typeof window.gameState === "object") {
+        risqueReplayMirrorPushToPublicBoard(window.gameState, { playbackOff: true });
+      }
+    } catch (eMirStop) {
+      /* ignore */
+    }
+    if (window.gameState && typeof window.gameState === "object" && replayWinOneShot) {
+      delete window.gameState.risqueGameWinImmediate;
+      delete window.gameState.winner;
     }
     if (!opts.skipStatusMsg) {
       setStatus("");
@@ -1240,17 +1549,33 @@
       };
       var j;
       for (j = 0; j < nextIdx; j++) {
-        replayApplyOnePlayback(gs, playbackEvents[j], ctxBulk);
+        try {
+          replayApplyOnePlayback(gs, playbackEvents[j], ctxBulk);
+        } catch (eBulk) {
+          try {
+            console.error("[Replay] seek rebuild failed at j=" + j, playbackEvents[j], eBulk);
+          } catch (eLg) {
+            /* ignore */
+          }
+          setStatus(
+            "Replay seek stopped at frame " +
+              j +
+              " — " +
+              (eBulk && eBulk.message ? eBulk.message : String(eBulk))
+          );
+          break;
+        }
         lastStampedRound = ctxBulk.lastStampedRound;
         lastReplayBoardSnapshot = ctxBulk.lastReplayBoardSnapshot;
       }
-      idx = nextIdx;
+      idx = j < nextIdx ? j : nextIdx;
       gs.phaseReplayIndex = idx;
       delete gs.risqueReplayBattleFlashLabels;
       removeReplaySplash();
       window.gameUtils.renderTerritories(null, gs);
       window.gameUtils.renderStats(gs);
       syncRoundHud(gs);
+      risqueReplayMirrorPushToPublicBoard(gs);
     }
 
     function clearTimer() {
@@ -1286,11 +1611,54 @@
         replayRoundFallback: replayRoundFallback,
         skipFx: false
       };
-      replayApplyOnePlayback(gs, ev, ctxStep);
+      try {
+        replayApplyOnePlayback(gs, ev, ctxStep);
+      } catch (eStep) {
+        try {
+          console.error("[Replay] apply event failed at index " + (idx - 1), ev, eStep);
+        } catch (eLog) {
+          /* ignore */
+        }
+        setStatus(
+          "Replay stopped: error applying frame " +
+            (idx - 1) +
+            " — " +
+            (eStep && eStep.message ? eStep.message : String(eStep))
+        );
+        stopPlayback({ skipStatusMsg: true, silentTransport: true });
+        return;
+      }
       lastStampedRound = ctxStep.lastStampedRound;
       lastReplayBoardSnapshot = ctxStep.lastReplayBoardSnapshot;
 
+      if (typeof window.risqueReplayDebugIsOn === "function" && window.risqueReplayDebugIsOn()) {
+        try {
+          var di = idx - 1;
+          var dSeg =
+            ev && ev.type === "board" ? String(ev.segment || "") : ev && ev.type ? String(ev.type) : "?";
+          var dR = ev && ev.round != null ? ev.round : "—";
+          var dK =
+            ev && ev.board && typeof ev.board === "object" ? Object.keys(ev.board).length : "—";
+          var dRec = ev && ev.recordedForPlayer != null ? String(ev.recordedForPlayer) : "—";
+          if (typeof window.risqueReplayDebugLog === "function") {
+            window.risqueReplayDebugLog(
+              "play",
+              "i=" + di,
+              ev && ev.type,
+              dSeg,
+              "stamp=" + dR,
+              "hudR=" + (gs.risqueReplayHudRound != null ? gs.risqueReplayHudRound : "—"),
+              "keys=" + dK,
+              "rec=" + dRec
+            );
+          }
+        } catch (eSt) {
+          /* ignore */
+        }
+      }
+
       syncRoundHud(gs);
+      risqueReplayMirrorPushToPublicBoard(gs);
 
       if (idx >= playbackEvents.length) {
         stopPlayback({ replayEnded: true });
@@ -1343,7 +1711,7 @@
     }, scaledDelay(MS_REPLAY_START_HOLD));
   }
 
-  function prepareLoadedPack(pack, sourcePacks, statusLineAfterOk) {
+  function prepareLoadedPack(pack, sourcePacks) {
     try {
       var rawEv = pack && pack.tape && pack.tape.events;
       if (!Array.isArray(rawEv) || !rawEv.length) {
@@ -1355,6 +1723,36 @@
       var normEv = rawEv.slice();
       if (typeof window.risqueReplayNormalizeTapeEventOrder === "function") {
         normEv = window.risqueReplayNormalizeTapeEventOrder(normEv);
+      }
+      var stripRes = stripBackwardStampedRoundBoardEvents(normEv);
+      if (typeof window.risqueReplayDebugIsOn === "function" && window.risqueReplayDebugIsOn()) {
+        try {
+          var evBeforeStrip = normEv.length;
+          if (typeof window.risqueReplayDebugLog === "function") {
+            window.risqueReplayDebugLog(
+              "prepareLoadedPack",
+              "raw=" + rawEv.length,
+              "afterNorm=" + evBeforeStrip,
+              "afterStrip=" + stripRes.events.length,
+              "stripped=" + stripRes.skipped
+            );
+          } else {
+            console.log(
+              "[ReplayDebug] prepareLoadedPack stripped=" + stripRes.skipped + " afterStrip=" + stripRes.events.length
+            );
+          }
+        } catch (ePl) {
+          /* ignore */
+        }
+      }
+      normEv = stripRes.events;
+      if (stripRes.skipped > 0 && stripRes.message) {
+        try {
+          if (!pack.__mergeWarnings) pack.__mergeWarnings = [];
+          if (pack.__mergeWarnings.indexOf(stripRes.message) === -1) pack.__mergeWarnings.push(stripRes.message);
+        } catch (eMw) {
+          /* ignore */
+        }
       }
       pack.tape.events = normEv;
       var playbackEvents = filterFullReplayEvents(normEv.slice());
@@ -1370,10 +1768,11 @@
       stopPlayback({ skipStatusMsg: true, silentTransport: true });
       window.__risqueReplayLoadedPack = pack;
       resetReplayBoardClean();
-      setStatus(statusLineAfterOk != null ? String(statusLineAfterOk) : "");
+      setStatus("");
       setTransportStandbyLoaded();
       updateTransportPlayPauseUi(null);
       updateRoundsLoadedUi(sourcePacks || [pack], pack);
+      clearReplayChipHighlight();
     } catch (e) {
       setStatus("Replay error: " + (e && e.message ? e.message : String(e)));
       try {
@@ -1458,6 +1857,7 @@
             ? "No replay loaded — " + skipped[0]
             : "No replay loaded. Skipped: " + skipped.join("; ");
         setStatus(failMsg);
+        updateReplayTapeCountLine(null);
         return;
       }
       var toPlay = packs.length === 1 ? packs[0] : mergeReplayPacks(packs);
@@ -1465,23 +1865,19 @@
         setStatus(
           "Could not merge replay files — ensure js/replay-tape.js is loaded before replay-machine.js."
         );
+        updateReplayTapeCountLine(null);
         return;
       }
       if (!toPlay.tape || !Array.isArray(toPlay.tape.events) || !toPlay.tape.events.length) {
         setStatus("No events to play — empty or invalid tape after merge.");
+        updateReplayTapeCountLine(null);
         return;
       }
       enrichPlayerColorsFromTape(toPlay);
-      var msgParts = [];
-      if (toPlay.__mergeWarnings && toPlay.__mergeWarnings.length) {
-        msgParts.push(toPlay.__mergeWarnings.join(" "));
-      }
-      if (skipped.length) {
-        msgParts.push("Skipped " + skipped.length + ": " + skipped.join("; ") + ".");
-      }
       window.__risqueReplayAutoStartTok = (window.__risqueReplayAutoStartTok || 0) + 1;
       var autoTok = window.__risqueReplayAutoStartTok;
-      prepareLoadedPack(toPlay, packs, msgParts.length ? msgParts.join(" ") : "");
+      updateReplayTapeCountLine(files.length);
+      prepareLoadedPack(toPlay, packs);
       if (AUTO_START_PLAYBACK_AFTER_LOAD) {
         window.setTimeout(function () {
           if (window.__risqueReplayAutoStartTok !== autoTok) return;
@@ -1508,28 +1904,31 @@
   }
 
   window.risqueReplayPositionHud = risqueReplayPositionHud;
+  window.risqueReplayStripBackwardStampedRoundBoards = stripBackwardStampedRoundBoardEvents;
 
-  function risqueReplayWaybackFolderHintSuffix(expectedPath) {
-    var pathLine = expectedPath && String(expectedPath).trim() ? String(expectedPath).trim() : "";
-    var win = false;
-    try {
-      win =
-        /Win/i.test(navigator.platform || "") || /Windows/i.test(navigator.userAgent || "");
-    } catch (ePl) {
-      win = false;
+  /**
+   * When DD + at least one rNpM.json exist, Wayback merge uses granular tapes only — drop replayN.json and
+   * replay-full.json from the folder load so merge does not replace the chip chain with one session blob.
+   */
+  function filterReplayMetaGranularWaybackFirst(metaArr) {
+    if (!metaArr || !metaArr.length) return metaArr;
+    var hasDd = false;
+    var hasRM = false;
+    var i;
+    for (i = 0; i < metaArr.length; i++) {
+      var nm = metaArr[i] && metaArr[i].name ? String(metaArr[i].name).toLowerCase() : "";
+      if (nm === "dd.json" || nm === "replay-deal.json") hasDd = true;
+      if (/^r\d+p\d+\.json$/i.test(nm)) hasRM = true;
     }
-    if (!win) {
-      return (
-        " Connect saved folder once (same directory the host uses for JSON)." +
-        (pathLine ? " Launcher path hint: " + pathLine + "." : "")
-      );
-    }
-    if (!pathLine) pathLine = RISQUE_DEFAULT_WINDOWS_SAVE_FOLDER;
-    return (
-      " Pick your save folder once with Connect saved folder — default " +
-      pathLine +
-      " (same folder round autosave uses)."
-    );
+    if (!hasDd || !hasRM) return metaArr;
+    return metaArr.filter(function (m) {
+      var nm = m && m.name ? String(m.name).toLowerCase() : "";
+      if (/^replay\d+\.json$/i.test(nm)) return false;
+      if (nm === "replay-full.json" || nm === "risque-full-replay.json" || nm === "rqwb-full-replay.json") {
+        return false;
+      }
+      return true;
+    });
   }
 
   /**
@@ -1556,7 +1955,13 @@
           if (!h) continue;
           if (h.kind === "file") {
             if (/^rqck-/i.test(String(name))) continue;
-            if (/^risque-ckpt-/i.test(String(name)) || /^game-ckpt-/i.test(String(name)) || /^replay-ckpt-/i.test(String(name))) continue;
+            if (
+              /^risque-ckpt-/i.test(String(name)) ||
+              /^game-ckpt-/i.test(String(name)) ||
+              /^replay-ckpt-/i.test(String(name)) ||
+              /^r\d+p\d+game\.json$/i.test(String(name))
+            )
+              continue;
             if (/^risque-emergency-/i.test(String(name)) || /^game-emergency-/i.test(String(name)) || /^replay-emergency-/i.test(String(name))) continue;
             var lower = String(name).toLowerCase();
             if (!lower.endsWith(".json")) continue;
@@ -1649,10 +2054,12 @@
     opts = opts || {};
     var meta = await risqueReplayCollectReplayFilesFromDir(dirHandle);
     meta = await risqueReplayPreferWaybackFullTapeAsync(meta);
+    meta = filterReplayMetaGranularWaybackFirst(meta);
     if (!meta.length) {
       setStatus(
-        "No replay tapes in this folder — flat saves use DD.json, rNpM.json, replay*.json at the save root (see REPLAY/ only for old layouts)."
+        "No replay tapes in this folder — flat saves use DD.json and rNpM.json at the save root (see REPLAY/ only for old layouts)."
       );
+      updateReplayTapeCountLine(null);
       return;
     }
     var files = meta.map(function (x) {
@@ -1660,7 +2067,7 @@
     });
     onFilesSelected(files);
     if (!opts.skipStatus) {
-      setStatus("Loaded " + files.length + " replay file(s) from folder.");
+      setStatus("");
     }
   }
 
@@ -1672,11 +2079,29 @@
       var h = await readableFn(dirHandle);
       if (!h) return false;
       await risqueReplayLoadFromDirectoryHandle(h, { skipStatus: true });
-      setStatus("Replay folder ready — tapes loaded automatically.");
+      setStatus("");
       return true;
     } catch (e) {
       return false;
     }
+  }
+
+  /** Same as the Refresh button: re-scan the remembered save folder from disk (when permitted). */
+  function risqueReplayRefreshFromStoredFolder() {
+    if (typeof window.risqueSaveFolderIdbGet !== "function") return Promise.resolve();
+    return window.risqueSaveFolderIdbGet().then(function (h) {
+      if (!h) {
+        setStatus("No folder saved yet — use Connect saved folder once.");
+        return;
+      }
+      return risqueReplayVerifyAndLoadFromStoredHandle(h);
+    });
+  }
+
+  function risqueReplayScheduleLaunchFolderRefresh() {
+    window.setTimeout(function () {
+      risqueReplayRefreshFromStoredFolder().catch(function () {});
+    }, 50);
   }
 
   /**
@@ -1684,7 +2109,7 @@
    * folder handle in IDB, one tap anywhere retries permission so replay loads without opening
    * the directory picker again.
    */
-  function risqueReplayWireOneShotGestureForStoredFolder(hintEl) {
+  function risqueReplayWireOneShotGestureForStoredFolder() {
     if (window.__risqueReplayFolderGestureWired) return;
     window.__risqueReplayFolderGestureWired = true;
     function cleanup() {
@@ -1709,15 +2134,8 @@
           if (!h) return false;
           return risqueReplayVerifyAndLoadFromStoredHandle(h);
         })
-        .then(function (ok) {
+        .then(function () {
           window.__risqueReplayFolderNeedsGesture = false;
-          if (ok && hintEl) {
-            hintEl.textContent =
-              "Replay folder connected — rounds below. Use Refresh if you add new tapes.";
-          } else if (!ok && hintEl) {
-            hintEl.textContent =
-              "Permission still blocked — use “Connect saved folder” once, same folder as the game.";
-          }
         })
         .catch(function () {});
     }
@@ -1725,7 +2143,7 @@
     document.addEventListener("keydown", onFirst, true);
   }
 
-  function risqueReplayBootStoredFolderFromIdb(hintEl) {
+  function risqueReplayBootStoredFolderFromIdb() {
     var getFn = window.risqueSaveFolderIdbGet;
     var readableFn = window.risqueSaveFolderEnsureReadable;
     if (typeof getFn !== "function") return;
@@ -1742,11 +2160,7 @@
         if (!res) return;
         if (res.__risqueNeedFolderGesture) {
           window.__risqueReplayFolderNeedsGesture = true;
-          if (hintEl) {
-            hintEl.textContent =
-              "Click or tap anywhere on this page to read your saved replay folder (no folder picker).";
-          }
-          risqueReplayWireOneShotGestureForStoredFolder(hintEl);
+          risqueReplayWireOneShotGestureForStoredFolder();
           return;
         }
         window.__risqueReplayFolderNeedsGesture = false;
@@ -1886,60 +2300,16 @@
       e.preventDefault();
       replayStopToCleanStandby();
     });
-    setWatchRoundIdle();
+    clearReplayChipHighlight();
+    updateReplayTapeCountLine(null);
     updateRoundsLoadedUi(null, null);
 
-    var hintEl = document.getElementById("risque-replay-folder-hint");
     var openedFromGameAuto = false;
     try {
       openedFromGameAuto = new URLSearchParams(window.location.search).get("auto") === "1";
     } catch (eAu) {
       openedFromGameAuto = false;
     }
-    var pathsPromise =
-      typeof window.risqueFetchLauncherPathsJson === "function"
-        ? window.risqueFetchLauncherPathsJson()
-        : fetch("risque-launcher-paths.json", { cache: "no-store" }).then(function (r) {
-            return r.ok ? r.json() : null;
-          });
-    pathsPromise
-      .then(function (j) {
-        if (openedFromGameAuto) return;
-        if (!hintEl) return;
-        if (window.__risqueReplayFolderNeedsGesture) return;
-        var expected =
-          j && (j.saveRoot || j.saveDir || j.replayDir)
-            ? String(j.saveRoot || j.saveDir || j.replayDir).trim()
-            : "";
-        var suffix = risqueReplayWaybackFolderHintSuffix(expected);
-        if (j && j.replayDir && j.saveRoot && String(j.replayDir).replace(/[/\\]+$/, "") === String(j.saveRoot).replace(/[/\\]+$/, "")) {
-          hintEl.textContent = "Replays save under: " + j.saveRoot + "." + suffix;
-          return;
-        }
-        if (j && j.replayDir && (!j.saveRoot || String(j.replayDir) !== String(j.saveRoot))) {
-          hintEl.textContent = "Launcher replay folder: " + j.replayDir + "." + suffix;
-          return;
-        }
-        if (j && (j.saveRoot || j.saveDir)) {
-          var sr = j.saveRoot || j.saveDir;
-          hintEl.textContent = "Launcher save folder: " + sr + "." + suffix;
-          return;
-        }
-        hintEl.textContent =
-          "Wayback reads tapes from your flat save folder." +
-            suffix +
-            " After one pick, the folder is remembered.";
-      })
-      .catch(function () {
-        if (openedFromGameAuto) return;
-        if (window.__risqueReplayFolderNeedsGesture) return;
-        if (hintEl) {
-          hintEl.textContent =
-            "Wayback reads tapes from your flat save folder." +
-              risqueReplayWaybackFolderHintSuffix("") +
-              " Open replay-machine from the repo folder when possible so risque-launcher-paths.json can be loaded.";
-        }
-      });
 
     var folderBtn = document.getElementById("risque-replay-folder-connect");
     var refreshBtn = document.getElementById("risque-replay-folder-refresh");
@@ -1969,13 +2339,7 @@
 
     if (refreshBtn && typeof window.risqueSaveFolderIdbGet === "function") {
       refreshBtn.addEventListener("click", function () {
-        window.risqueSaveFolderIdbGet().then(function (h) {
-          if (!h) {
-            setStatus("No folder saved yet — use Connect saved folder once.");
-            return;
-          }
-          risqueReplayVerifyAndLoadFromStoredHandle(h);
-        });
+        risqueReplayRefreshFromStoredFolder();
       });
     } else     if (refreshBtn) {
       refreshBtn.disabled = true;
@@ -2034,7 +2398,8 @@
       }
       if (!bsPack) return false;
       enrichPlayerColorsFromTape(bsPack);
-      prepareLoadedPack(bsPack, [bsPack], "Tape loaded from game — press PLAY.");
+      updateReplayTapeCountLine(null);
+      prepareLoadedPack(bsPack, [bsPack]);
       return true;
     }
 
@@ -2042,10 +2407,8 @@
       try {
         if (applyLsBootstrapPackOrFalse()) {
           waybackBootstrappedFromGame = true;
-          if (hintEl) {
-            hintEl.textContent =
-              "Tape loaded from live game — press PLAY. Refresh reloads files from your save folder.";
-          }
+          /* LS gives one merged pack without per-file names; disk re-scan matches manual Refresh chips (DD, rNpM). */
+          risqueReplayScheduleLaunchFolderRefresh();
         }
       } catch (eBsFirst) {
         try {
@@ -2084,15 +2447,12 @@
             var foldRich = replayPackLooksRich(pk);
             if (folderOk && foldRich) {
               waybackBootstrappedFromGame = true;
-              if (hintEl) {
-                hintEl.textContent =
-                  "Tape loaded from your save folder — press PLAY. Refresh reloads after new saves.";
-              }
               return;
             }
             try {
               if (applyLsBootstrapPackOrFalse()) {
                 waybackBootstrappedFromGame = true;
+                risqueReplayScheduleLaunchFolderRefresh();
               }
             } catch (eBs) {
               try {
@@ -2104,16 +2464,12 @@
                 "Replay from game failed to parse — open REPLAY again from the host map, or Connect saved folder."
               );
             }
-            if (openedFromGameAuto && hintEl) {
-              hintEl.textContent = waybackBootstrappedFromGame
-                ? "Tape ready — PLAY is enabled. Use Refresh to reload from your save folder if needed."
-                : "Opened from the game — if nothing loaded, press REPLAY again on the host (same browser). Or Connect saved folder / click once for permission.";
-            }
           })
           .catch(function () {
             try {
               if (applyLsBootstrapPackOrFalse()) {
                 waybackBootstrappedFromGame = true;
+                risqueReplayScheduleLaunchFolderRefresh();
               }
             } catch (eBs2) {
               try {
@@ -2122,23 +2478,17 @@
                 /* ignore */
               }
             }
-            if (openedFromGameAuto && hintEl) {
-              hintEl.textContent = waybackBootstrappedFromGame
-                ? "Tape ready — PLAY is enabled. Use Refresh to reload from your save folder if needed."
-                : "Opened from the game — if nothing loaded, press REPLAY again on the host (same browser). Or Connect saved folder / click once for permission.";
-            }
           })
           .then(function () {
             if (!waybackBootstrappedFromGame) {
-              risqueReplayBootStoredFolderFromIdb(hintEl);
+              risqueReplayBootStoredFolderFromIdb();
+              risqueReplayScheduleLaunchFolderRefresh();
             }
           });
-      } else if (hintEl && !hintEl.textContent) {
-        hintEl.textContent =
-          "Tape loaded from live game — press PLAY. Refresh reloads files from your save folder.";
       }
     } else {
-      risqueReplayBootStoredFolderFromIdb(hintEl);
+      risqueReplayBootStoredFolderFromIdb();
+      risqueReplayScheduleLaunchFolderRefresh();
     }
   });
 })();

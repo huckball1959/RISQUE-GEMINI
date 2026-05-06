@@ -19,6 +19,44 @@
     console.log(logEntry, data || "");
   }
 
+  var __risqueReceiveCardContinueDefaultLabel = "CONTINUE";
+
+  function receiveCardSetContinueSaving(busy) {
+    var btn = document.getElementById("receivecard-btn-end");
+    if (btn) {
+      if (busy) {
+        if (!btn.getAttribute("data-default-label")) {
+          try {
+            btn.setAttribute(
+              "data-default-label",
+              (btn.textContent || __risqueReceiveCardContinueDefaultLabel).trim() || __risqueReceiveCardContinueDefaultLabel
+            );
+          } catch (eLab) {
+            btn.setAttribute("data-default-label", __risqueReceiveCardContinueDefaultLabel);
+          }
+        }
+        btn.disabled = true;
+        btn.setAttribute("aria-busy", "true");
+        btn.textContent = "Saving…";
+      } else {
+        var def = btn.getAttribute("data-default-label") || __risqueReceiveCardContinueDefaultLabel;
+        btn.disabled = false;
+        btn.removeAttribute("aria-busy");
+        btn.textContent = def;
+      }
+    }
+    if (busy) {
+      var msg = document.getElementById("receivecard-compact-message");
+      if (msg) {
+        try {
+          msg.textContent = "Saving turn to disk…";
+        } catch (eM) {
+          /* ignore */
+        }
+      }
+    }
+  }
+
   function receiveCardShuffleArray(array) {
     var arr = array.slice();
     for (var i = arr.length - 1; i > 0; i -= 1) {
@@ -217,7 +255,14 @@
       receiveCardSetMessage("Invalid game state.");
       return false;
     }
-    var currentIndex = gameState.turnOrder.indexOf(gameState.currentPlayer);
+    var tor =
+      typeof window.risqueReplayResolveTurnOrderIndex === "function"
+        ? window.risqueReplayResolveTurnOrderIndex(gameState.turnOrder, gameState.currentPlayer)
+        : null;
+    var currentIndex =
+      tor && typeof tor.index === "number" && tor.index >= 0
+        ? tor.index
+        : gameState.turnOrder.indexOf(gameState.currentPlayer);
     if (currentIndex === -1) {
       receiveCardLog("Current player not in turn order");
       receiveCardSetMessage("Invalid turn order.");
@@ -248,13 +293,18 @@
     if (typeof window.risqueReplayOnHostEnterCardplay === "function" && !window.risqueDisplayIsPublic) {
       window.risqueReplayOnHostEnterCardplay(gameState);
     }
+    var turnDisk = null;
     if (
       typeof window.risqueSessionDiskScheduleTurnCheckpoint === "function" &&
       !window.risqueDisplayIsPublic
     ) {
-      window.risqueSessionDiskScheduleTurnCheckpoint(gameState, prevPlayerJustFinished);
+      try {
+        turnDisk = window.risqueSessionDiskScheduleTurnCheckpoint(gameState, prevPlayerJustFinished);
+      } catch (eTd) {
+        turnDisk = null;
+      }
     }
-    return completedRound;
+    return { completedRound: completedRound, turnDisk: turnDisk };
   }
 
   function receiveCardRunDisplay() {
@@ -510,40 +560,71 @@
       receiveCardEndTurnConquestElimination();
       return;
     }
-    var completedRound = receiveCardAdvanceTurn();
-    if (completedRound === false) return;
-    var gsAfter = window.gameState || {};
-    try {
-      delete gsAfter.risqueControlVoice;
-    } catch (eCvDel) {
-      /* ignore */
+    if (window.__risqueReceiveCardEndTurnBusy) {
+      receiveCardLog("Ignored duplicate end-turn (still processing)");
+      return;
     }
-    var nextPlayerName = (gsAfter.currentPlayer ? gsAfter.currentPlayer : "the next player").toString();
-    try {
-      gsAfter.risquePublicNextPlayerHandoffPrimary = "Next player is " + nextPlayerName;
-      gsAfter.risquePublicNextPlayerHandoffReport = "";
-    } catch (eHand) {
-      /* ignore */
-    }
-    try {
-      localStorage.setItem("gameState", JSON.stringify(gsAfter));
-    } catch (e) {
-      /* ignore */
-    }
-    /**
-     * Round autosave is async (folder boot + disk). risqueNavigateWithFade uses synchronous location.href;
-     * without awaiting, the page can unload before writes run — especially when privacy handoff is skipped.
-     */
-    var roundSaveChain = Promise.resolve();
-    if (completedRound > 0 && typeof window.risqueRoundAutosaveOnRoundComplete === "function") {
-      var completedFromState = (Number(gsAfter.round) || 0) - 1;
-      var crArg = completedFromState > 0 ? completedFromState : completedRound;
-      var maybeSaveP = window.risqueRoundAutosaveOnRoundComplete(gsAfter, crArg);
-      if (maybeSaveP && typeof maybeSaveP.then === "function") {
-        roundSaveChain = maybeSaveP;
+    window.__risqueReceiveCardEndTurnBusy = true;
+    receiveCardSetContinueSaving(true);
+    var advTurn = receiveCardAdvanceTurn();
+    if (advTurn === false) {
+      receiveCardSetContinueSaving(false);
+      try {
+        window.__risqueReceiveCardEndTurnBusy = false;
+      } catch (eRel0) {
+        /* ignore */
       }
+      return;
     }
-    function runReceiveCardHandoffAndNavigate() {
+    try {
+      var gsAfter = window.gameState || {};
+      try {
+        delete gsAfter.risqueControlVoice;
+      } catch (eCvDel) {
+        /* ignore */
+      }
+      var nextPlayerName = (gsAfter.currentPlayer ? gsAfter.currentPlayer : "the next player").toString();
+      try {
+        gsAfter.risquePublicNextPlayerHandoffPrimary = "Next player is " + nextPlayerName;
+        gsAfter.risquePublicNextPlayerHandoffReport = "";
+      } catch (eHand) {
+        /* ignore */
+      }
+      try {
+        localStorage.setItem("gameState", JSON.stringify(gsAfter));
+      } catch (e) {
+        /* ignore */
+      }
+      /**
+       * Round autosave + per-turn disk (rNpM / rNpMgame) must finish before navigation: risqueNavigateWithFade
+       * sets location.href synchronously; without awaiting, the host page can unload mid-write (missing seats).
+       */
+      var completedRound = advTurn.completedRound;
+      var roundSaveChain = Promise.resolve();
+      if (completedRound > 0 && typeof window.risqueRoundAutosaveOnRoundComplete === "function") {
+        var completedFromState = (Number(gsAfter.round) || 0) - 1;
+        var crArg = completedFromState > 0 ? completedFromState : completedRound;
+        var maybeSaveP = window.risqueRoundAutosaveOnRoundComplete(gsAfter, crArg);
+        if (maybeSaveP && typeof maybeSaveP.then === "function") {
+          roundSaveChain = maybeSaveP;
+        }
+      }
+      var diskChain =
+        advTurn.turnDisk && typeof advTurn.turnDisk.then === "function"
+          ? advTurn.turnDisk
+          : Promise.resolve(true);
+      if (
+        (!advTurn.turnDisk || typeof advTurn.turnDisk.then !== "function") &&
+        typeof window.risqueSessionDiskHasWritableSaveTarget === "function" &&
+        window.risqueSessionDiskHasWritableSaveTarget()
+      ) {
+        receiveCardLog("Missing turnDisk with active save target; awaiting write queue.");
+        diskChain =
+          typeof window.risqueSessionDiskAwaitTurnWriteQueue === "function"
+            ? window.risqueSessionDiskAwaitTurnWriteQueue()
+            : diskChain;
+      }
+      function runReceiveCardHandoffAndNavigate() {
       if (typeof window.risqueHostReplaceShellGameState === "function") {
         window.risqueHostReplaceShellGameState(gsAfter);
       }
@@ -575,8 +656,40 @@
       } else {
         goNextPlayerCardplay();
       }
+      }
+      Promise.all([roundSaveChain, diskChain])
+        .then(function () {
+          return typeof window.risqueSessionDiskAwaitTurnWriteQueue === "function"
+            ? window.risqueSessionDiskAwaitTurnWriteQueue()
+            : Promise.resolve(true);
+        })
+        .then(
+          function () {
+            runReceiveCardHandoffAndNavigate();
+            /* Do not re-enable Continue here: either we navigate away, or tablet handoff is on top — re-enabling
+             * allowed rapid second clicks on #ui-overlay (above the old z-index:999998 gate) before navigation. */
+          },
+          function (err) {
+            receiveCardLog("Turn save / round autosave failed", err);
+            receiveCardSetMessage(
+              "Could not finish saving to disk. Check folder access, wait a moment, then tap Continue again."
+            );
+            receiveCardSetContinueSaving(false);
+            try {
+              window.__risqueReceiveCardEndTurnBusy = false;
+            } catch (eRelF) {
+              /* ignore */
+            }
+          }
+        );
+    } catch (eRcBody) {
+      try {
+        window.__risqueReceiveCardEndTurnBusy = false;
+      } catch (eRelB) {
+        /* ignore */
+      }
+      throw eRcBody;
     }
-    roundSaveChain.then(runReceiveCardHandoffAndNavigate, runReceiveCardHandoffAndNavigate);
   }
 
   function receiveCardPrepareLoadedState() {

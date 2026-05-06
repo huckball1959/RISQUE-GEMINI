@@ -17,9 +17,8 @@
       height: 100%;
     }
   </style>
-  <link rel="stylesheet" href="game.css?v=replay-elimination-flash-2026-04-28" />
+  <link rel="stylesheet" href="game.css?v=wayback-chips-compact-2026-05-04" />
   <style id="risque-replay-panel-width-lock">
-    /* 100vw includes the vertical scrollbar width in some browsers and causes a horizontal gutter; use % of the stage instead. */
     html body.replay-machine-page #runtime-hud-root.runtime-hud-root--replay-machine {
       display: block !important;
       width: 800px !important;
@@ -49,6 +48,21 @@
       overflow-x: hidden !important;
       padding-top: 5px !important;
     }
+    html body.replay-machine-page .risque-replay-tape-count-line {
+      text-align: center;
+      font-family: "Courier New", Courier, monospace;
+      font-size: clamp(17px, 2.4vw, 24px);
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      color: #ff8c00;
+      text-shadow: 0 0 12px rgba(255, 140, 0, 0.45);
+      margin: 0 0 10px;
+      min-height: 0;
+    }
+    html body.replay-machine-page .risque-replay-tape-count-line:empty {
+      display: none;
+      margin: 0;
+    }
   </style>
 </head>
 <body class="replay-machine-page risque-view-host">
@@ -66,38 +80,40 @@
                 <p class="risque-replay-machine-brand-main">WAYBACK MACHINE</p>
               </div>
               <div class="risque-replay-file-row risque-replay-file-row--primary">
-                <button type="button" id="risque-replay-folder-connect" class="risque-replay-file-pick-btn risque-replay-file-pick-btn--primary" title="Pick your flat save folder once (default C:\risque\save with scripts\RISQUE.bat — same as round autosave)">
+                <button
+                  type="button"
+                  id="risque-replay-folder-connect"
+                  class="risque-replay-file-pick-btn risque-replay-file-pick-btn--primary"
+                  title="Pick your flat save folder once (default C:\risque\save with scripts\RISQUE.bat — same as round autosave)"
+                >
                   Connect saved folder
                 </button>
-                <button type="button" id="risque-replay-folder-refresh" class="risque-replay-file-pick-btn" title="Reload all *replay*.json from the connected folder">
+                <button
+                  type="button"
+                  id="risque-replay-folder-refresh"
+                  class="risque-replay-file-pick-btn"
+                  title="Reload all *replay*.json from the connected folder"
+                >
                   Refresh
                 </button>
               </div>
-              <details class="risque-replay-manual-advanced">
-                <summary>Load files manually (optional)</summary>
-                <div class="risque-replay-file-row risque-replay-file-row--manual">
-                  <button type="button" id="risque-replay-file-pick" class="risque-replay-file-pick-btn">
-                    Choose replay files
-                  </button>
-                  <input
-                    type="file"
-                    id="risque-replay-file"
-                    class="risque-replay-file-input-native"
-                    accept=".json,application/json"
-                    multiple
-                    tabindex="-1"
-                    aria-label="Choose one or more RQRP replay JSON files"
-                  />
-                </div>
-              </details>
-              <p id="risque-replay-folder-hint" class="risque-replay-status-line" style="margin-top: 6px; font-size: 13px; opacity: 0.85"></p>
-              <div class="risque-replay-rounds-section" id="risque-replay-rounds-section">
-                <div class="risque-replay-file-panel-label">Segments (oldest save first — tap to jump)</div>
-                <div id="risque-replay-file-list" class="risque-replay-round-chips" role="group" aria-label="Replay segments by save time"></div>
+              <div class="risque-replay-file-row risque-replay-file-row--manual">
+                <button type="button" id="risque-replay-file-pick" class="risque-replay-file-pick-btn">
+                  Choose replay files
+                </button>
+                <input
+                  type="file"
+                  id="risque-replay-file"
+                  class="risque-replay-file-input-native"
+                  accept=".json,application/json"
+                  multiple
+                  tabindex="-1"
+                  aria-label="Choose one or more RQRP replay JSON files"
+                />
               </div>
-              <div class="risque-replay-round-playing-box" aria-label="Round playing">
-                <span class="risque-replay-round-playing-label">Round playing</span>
-                <span id="risque-replay-watch-round" class="risque-replay-round-playing-num">—</span>
+              <div class="risque-replay-rounds-section" id="risque-replay-rounds-section">
+                <div id="risque-replay-tape-count" class="risque-replay-tape-count-line" aria-live="polite"></div>
+                <div id="risque-replay-file-list" class="risque-replay-round-chips" role="group" aria-label="Replay segments"></div>
               </div>
             </div>
             <p id="risque-replay-status" class="risque-replay-status-line"></p>
@@ -132,6 +148,6 @@
   <script src="js/replay-tape.js?v=round-replay-attack-tail-2026-05-01"></script>
   <script src="js/risque-external-urls.js"></script>
   <script src="js/risque-save-folder-idb.js?v=autosave-folder-2026-04-30"></script>
-  <script src="js/replay-machine.js?v=flat-save-wayback-hint-2026-05-02"></script>
+  <script src="js/replay-machine.js?v=wayback-launch-auto-refresh-2026-05-04"></script>
 </body>
 </html>

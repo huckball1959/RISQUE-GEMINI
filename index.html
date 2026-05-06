@@ -60,7 +60,7 @@
       <a href="game.html">Runtime shell</a> · <a href="index.html">Launcher (redirect)</a>
     </p>
     <p id="risque-index-file-hint" class="hint" hidden style="margin-top: 12px">
-      Opening from disk (<code>file://</code>) limits folder autosave. Use <code>scripts\RISQUE.bat</code> or serve over localhost for round saves and Wayback replay folder access.
+      For automatic saves to <code>C:\risque\save</code> (no folder pick), start with <code>scripts\RISQUE.bat</code> and choose local game. Opening HTML directly still works, but disk replay files need that launcher or a localhost server.
     </p>
   </main>
 
@@ -114,6 +114,10 @@
         u.searchParams.delete("loginLegacyNext");
         u.searchParams.delete("loginLoadRedirect");
         u.searchParams.delete("next");
+        try {
+          var rd0 = new URLSearchParams(location.search).get("replayDebug");
+          if (rd0 === "1" || rd0 === "0") u.searchParams.set("replayDebug", rd0);
+        } catch (eRd0) {}
         return u.href;
       }
 
@@ -150,7 +154,14 @@
            * No third-argument window features: Chrome opens a normal tab (full tab bar), not a sized popup.
            * Reuse name so a second launch targets the same host tab instead of piling up duplicates.
            */
-          return window.open(gameLoginUrl(), "risqueHostBoard");
+          var dest = gameLoginUrl();
+          try {
+            var rdH = new URLSearchParams(location.search).get("replayDebug");
+            if (rdH === "1" || rdH === "0") {
+              dest += (dest.indexOf("?") >= 0 ? "&" : "?") + "replayDebug=" + rdH;
+            }
+          } catch (eH) {}
+          return window.open(dest, "risqueHostBoard");
         } catch (e1) {
           return null;
         }
@@ -173,6 +184,9 @@
         /* Host: normal tab in this browser window. Public: separate popup on top of any stack. */
         var hostWin = openHostGameWindow();
         var pubWin = openPublicGameWindow();
+        try {
+          if (pubWin && !pubWin.closed) window.__risquePublicBoardWindow = pubWin;
+        } catch (ePubRef) {}
         var okHost = !!(hostWin && !hostWin.closed);
         var okPub = !!(pubWin && !pubWin.closed);
         if (okHost && okPub) {
@@ -193,6 +207,14 @@
             dest += (dest.indexOf("?") >= 0 ? "&" : "?") + "risqueAutoPublic=1";
           }
         } catch (eAp) {
+          /* ignore */
+        }
+        try {
+          var rd = new URLSearchParams(location.search).get("replayDebug");
+          if (rd === "1" || rd === "0") {
+            dest += (dest.indexOf("?") >= 0 ? "&" : "?") + "replayDebug=" + rd;
+          }
+        } catch (eRd) {
           /* ignore */
         }
         try {

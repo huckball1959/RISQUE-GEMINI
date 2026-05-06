@@ -108,6 +108,10 @@ html, body {
   pointer-events: all;
   cursor: pointer;
 }
+.territory-number text {
+  pointer-events: all;
+  cursor: pointer;
+}
 
 /* Private deploy: +N satellite at ~2 o'clock — net troops added this session (see core.js renderTerritories) */
 .svg-overlay g.territory-deploy-satellite {
@@ -681,6 +685,82 @@ html.risque-view-public .runtime-hud-root.runtime-hud-root--public-cardplay-proc
   margin-bottom: 0;
 }
 
+/* ========== Public TV: Wayback mirror (replay pushes risqueReplayPlaybackActive) ========== */
+html.risque-public-wayback-mirror.risque-view-public .hud-title-stack {
+  display: none !important;
+}
+
+html.risque-public-wayback-mirror.risque-view-public #hud-stats-panel,
+html.risque-public-wayback-mirror.risque-view-public #risque-host-cards-played-panel,
+html.risque-public-wayback-mirror.risque-view-public #risque-host-lucky-panel,
+html.risque-public-wayback-mirror.risque-view-public #risque-host-cards-in-hand-panel {
+  display: none !important;
+}
+
+html.risque-public-wayback-mirror.risque-view-public #hud-phase-player-row {
+  display: none !important;
+}
+
+html.risque-public-wayback-mirror.risque-view-public #hud-attack-chrome,
+html.risque-public-wayback-mirror.risque-view-public #ucp-slot-strip,
+html.risque-public-wayback-mirror.risque-view-public .attack-reinforce-footer,
+html.risque-public-wayback-mirror.risque-view-public #hud-public-cardplay-strip {
+  display: none !important;
+}
+
+html.risque-public-wayback-mirror.risque-view-public #risque-phase-content {
+  display: none !important;
+}
+
+html.risque-public-wayback-mirror.risque-view-public .risque-public-wayback-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 12px 12px;
+  margin-bottom: 4px;
+}
+
+html.risque-public-wayback-mirror.risque-view-public .risque-public-wayback-brand {
+  font-size: clamp(18px, 2.2vw, 26px);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: #e2e8f0;
+  text-align: center;
+  line-height: 1.15;
+}
+
+html.risque-public-wayback-mirror.risque-view-public .risque-public-wayback-round-row {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+html.risque-public-wayback-mirror.risque-view-public .risque-public-wayback-round-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: #94a3b8;
+  text-transform: uppercase;
+}
+
+html.risque-public-wayback-mirror.risque-view-public .risque-public-wayback-round-num {
+  font-size: clamp(28px, 3.5vw, 44px);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: #fde047;
+  line-height: 1;
+  text-shadow: 0 0 20px rgba(250, 204, 21, 0.35);
+}
+
+html.risque-public-wayback-mirror.risque-view-public #risque-main-panel-body {
+  padding-top: 4px;
+}
+
 /* Login phase: form in phase slot; full column scroll disabled in syncPosition — use vertical space below */
 .runtime-hud-root--login .risque-phase-content {
   margin-top: 4px;
@@ -929,13 +1009,14 @@ html.risque-view-public .runtime-hud-root.runtime-hud-root--public-cardplay-proc
   max-width: calc(var(--risque-corner-map-max) - 50px);
   box-sizing: border-box;
   pointer-events: auto;
-  align-items: stretch;
+  /* Bottom-align chips + round column so bases line up with the orange badge foot. */
+  align-items: end;
 }
 
 .risque-board-round-save-cluster {
   display: flex;
   flex-direction: row;
-  align-items: stretch;
+  align-items: flex-end;
   gap: var(--risque-corner-btn-gap);
   flex: 0 0 auto;
   width: max-content;
@@ -976,9 +1057,130 @@ html.risque-view-public .runtime-hud-root.runtime-hud-root--public-cardplay-proc
   justify-content: center;
 }
 
+/* Bottom map row: match top-row green chips (16px / 10px14px padding) + shared outer height. */
+.risque-board-corner-bottom .risque-board-op-btn,
+.risque-board-corner-bottom #risque-board-replay-disk-toggle {
+  min-height: 52px;
+  padding: 10px 14px;
+  white-space: nowrap;
+  align-self: end;
+}
+
+.risque-board-corner-bottom .risque-board-emergency-save-btn {
+  min-height: 52px;
+  padding: 10px 14px;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1.15;
+  align-self: end;
+}
+
+.risque-board-corner-bottom .risque-board-round-save-cluster .risque-board-round-save-status.risque-board-op-btn {
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: end;
+}
+
 .risque-board-emergency-save-btn:hover {
   background: linear-gradient(180deg, #ef4444 0%, #b91c1c 100%);
   color: #fff;
+}
+
+/* Host + public: prominent current round (territory markers use r≈30; badge ≈2× diameter). */
+.risque-map-round-indicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 5px;
+  pointer-events: none;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+}
+
+.risque-map-round-indicator--host {
+  align-self: flex-end;
+  margin-left: 6px;
+}
+
+.risque-map-round-indicator__label {
+  font-family: Arial, sans-serif;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  line-height: 1;
+  color: #fff;
+  -webkit-text-stroke: 2px #000;
+  paint-order: stroke fill;
+  text-shadow:
+    0 0 3px #000,
+    2px 0 0 #000,
+    -2px 0 0 #000,
+    0 2px 0 #000,
+    0 -2px 0 #000;
+}
+
+.risque-map-round-indicator__badge {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: #ff7a18;
+  border: 4px solid #000;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+}
+
+.risque-map-round-indicator__num {
+  font-family: Arial, sans-serif;
+  font-size: 46px;
+  font-weight: 900;
+  line-height: 1;
+  color: #0b1220;
+  -webkit-text-stroke: 2px #fff;
+  paint-order: stroke fill;
+  text-shadow:
+    0 0 4px #fff,
+    1px 0 0 #fff,
+    -1px 0 0 #fff,
+    0 1px 0 #fff,
+    0 -1px 0 #fff;
+}
+
+/* Public TV: same bottom grid + cluster as host (ghost placeholders); nudge right to match map alignment. */
+html.risque-view-public #risque-public-hostlike-round-bar.risque-board-corner-bottom--public-hostlike {
+  --risque-corner-map-max: 1080px;
+  --risque-corner-btn-gap: 9px;
+  position: absolute;
+  /* Host bar uses left:25px inside full corner-tools; nudge right so TV map matches host chip column. */
+  left: 43px;
+  bottom: 25px;
+  right: auto;
+  top: auto;
+  display: grid;
+  grid-template-columns: auto auto auto auto auto;
+  gap: var(--risque-corner-btn-gap);
+  width: max-content;
+  max-width: calc(var(--risque-corner-map-max) - 50px);
+  box-sizing: border-box;
+  z-index: 25;
+  pointer-events: none;
+  align-items: end;
+}
+
+html.risque-view-public .risque-public-corner-ghost {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+html.risque-view-public .risque-public-ghost-replay-save {
+  min-width: 13.5rem;
+  box-sizing: border-box;
 }
 
 /* Green chip via .risque-board-op-btn; keep readable mixed-case label (not ALL CAPS). */
@@ -1016,6 +1218,31 @@ html.risque-view-public .runtime-hud-root.runtime-hud-root--public-cardplay-proc
   background: #00cc00;
   border-color: #14532d;
   color: #000000;
+}
+
+/* Bottom map row only: override general op-btn white-space so all chips share one line height + foot with round badge. */
+.risque-board-corner-tools .risque-board-corner-bottom > .risque-board-op-btn,
+.risque-board-corner-tools .risque-board-corner-bottom > #risque-board-replay-disk-toggle {
+  white-space: nowrap;
+  word-break: normal;
+  overflow-wrap: normal;
+  min-height: 52px;
+  align-self: end;
+}
+
+.risque-board-corner-tools .risque-board-corner-bottom .risque-board-round-save-cluster .risque-board-emergency-save-btn {
+  min-height: 52px;
+  padding: 10px 14px;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1.15;
+  align-self: end;
+}
+
+.risque-board-corner-tools .risque-board-corner-bottom .risque-board-round-save-cluster .risque-board-round-save-status.risque-board-op-btn {
+  min-height: 52px;
+  align-self: end;
 }
 
 .risque-board-corner-msg {
@@ -1115,7 +1342,7 @@ html.risque-view-public .runtime-hud-root.runtime-hud-root--public-cardplay-proc
 }
 
 #risque-login-hud-root .color-swatch.blue {
-  background: #0000ff;
+  background: #87bfff;
 }
 #risque-login-hud-root .color-swatch.red {
   background: #ff0000;
@@ -9110,10 +9337,14 @@ body.replay-machine-page .risque-replay-round-chips {
   flex-wrap: wrap;
   justify-content: center;
   align-items: center;
-  gap: 8px;
+  gap: 4px 5px;
   width: 100%;
   max-width: 100%;
-  min-height: 2.5rem;
+  min-height: 1.5rem;
+  max-height: min(40vh, 14rem);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 2px 0;
   box-sizing: border-box;
 }
 body.replay-machine-page .risque-replay-round-chips-empty {
@@ -9124,15 +9355,15 @@ body.replay-machine-page .risque-replay-round-chips-empty {
 }
 body.replay-machine-page .risque-replay-round-chip {
   font-family: "Courier New", Courier, monospace;
-  font-size: 16px;
-  font-weight: 900;
-  line-height: 1.2;
-  min-width: 2.25rem;
-  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.15;
+  min-width: 1.35rem;
+  padding: 3px 6px;
   color: #00ff00;
   background: linear-gradient(180deg, #0a1f0a 0%, #051005 100%);
-  border: 2px solid #00ff00;
-  border-radius: 6px;
+  border: 1px solid #00ff00;
+  border-radius: 4px;
   cursor: pointer;
   display: inline-flex;
   flex-direction: row;
@@ -9140,12 +9371,12 @@ body.replay-machine-page .risque-replay-round-chip {
   justify-content: center;
   gap: 0;
   box-shadow:
-    inset 0 1px 0 rgba(0, 255, 0, 0.12),
-    0 0 10px rgba(0, 255, 0, 0.18);
+    inset 0 1px 0 rgba(0, 255, 0, 0.1),
+    0 0 6px rgba(0, 255, 0, 0.14);
 }
 body.replay-machine-page .risque-replay-round-chip-r {
-  font-size: 16px;
-  font-weight: 900;
+  font-size: 11px;
+  font-weight: 800;
   line-height: 1.1;
 }
 body.replay-machine-page .risque-replay-round-chip:hover {
@@ -9153,6 +9384,17 @@ body.replay-machine-page .risque-replay-round-chip:hover {
   box-shadow:
     inset 0 1px 0 rgba(0, 255, 0, 0.2),
     0 0 16px rgba(0, 255, 0, 0.35);
+}
+body.replay-machine-page button.risque-replay-round-chip.risque-replay-round-chip--active {
+  border-color: #fbbf24;
+  color: #fffbeb;
+  background: linear-gradient(180deg, #422006 0%, #1c1004 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(251, 191, 36, 0.35),
+    0 0 12px rgba(251, 191, 36, 0.45),
+    0 0 20px rgba(245, 158, 11, 0.2);
+  outline: 1px solid rgba(251, 191, 36, 0.95);
+  outline-offset: 1px;
 }
 body.replay-machine-page .risque-replay-round-playing-box {
   margin-top: 14px;

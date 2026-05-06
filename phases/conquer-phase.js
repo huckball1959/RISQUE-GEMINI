@@ -152,7 +152,7 @@
       var confettiApi = window.confetti.create(canvas, { resize: true });
       var duration = 15 * 1000;
       var animationEnd = Date.now() + duration;
-      var colors = ["#ff0000", "#00ff00", "#0000ff", "#ffff00", "#ff69b4"];
+      var colors = ["#ff0000", "#00ff00", "#87bfff", "#ffff00", "#ff69b4"];
       function randomInRange(min, max) {
         return Math.random() * (max - min) + min;
       }
@@ -252,54 +252,6 @@
     var isGameWon = gs.turnOrder.length === 1;
     var html;
 
-    if (isGameWon) {
-      gs.winner = currentPlayer.name;
-      try {
-        localStorage.setItem("gameState", JSON.stringify(gs));
-      } catch (e1) {
-        /* ignore */
-      }
-      html =
-        '<div class="risque-conquer-player-name" style="color:' +
-        playerColor +
-        '">' +
-        currentPlayer.name +
-        "'s Victory!</div>" +
-        '<div class="risque-conquer-win-message">' +
-        currentPlayer.name +
-        " WON THE GAME!</div>" +
-        '<div class="risque-conquer-button-wrap">' +
-        '<button type="button" id="risque-conquer-proceed" class="risque-conquer-btn">Return to main menu</button>' +
-        "</div>";
-      logToStorage("Game won by player", { winner: currentPlayer.name });
-    } else {
-      html =
-        '<div class="risque-conquer-player-name" style="color:' +
-        playerColor +
-        '">' +
-        currentPlayer.name +
-        "'s Conquer Phase</div>" +
-        '<div class="risque-conquer-message">' +
-        currentPlayer.name +
-        " has conquered " +
-        defeatedPlayer.name +
-        "!</div>" +
-        '<div class="risque-conquer-button-wrap">' +
-        '<button type="button" id="risque-conquer-proceed" class="risque-conquer-btn">Proceed to card transfer</button>' +
-        "</div>";
-      logToStorage("Conquer phase initialized", {
-        currentPlayer: currentPlayer.name,
-        defeatedPlayer: defeatedPlayer.name
-      });
-    }
-
-    uiOverlay.innerHTML = html;
-
-    var proceed = document.getElementById("risque-conquer-proceed");
-    var msgEl = uiOverlay.querySelector(
-      isGameWon ? ".risque-conquer-win-message" : ".risque-conquer-message"
-    );
-
     function proceedAction() {
       if (isGameWon) {
         try {
@@ -326,31 +278,101 @@
       }, 2000);
     }
 
-    if (isGameWon) {
-      startConfetti();
-    } else if (proceed && msgEl) {
-      setTimeout(function () {
-        msgEl.classList.add("static");
-        proceed.classList.add("visible");
-      }, 3000);
-    }
-
-    if (proceed) {
-      proceed.addEventListener("click", proceedAction);
-      proceed.addEventListener("keydown", function (e) {
-        if (e.key === "Enter" || e.key === " ") proceedAction();
-      });
-    }
-
-    requestAnimationFrame(function () {
-      window.gameUtils.resizeCanvas();
-      if (window.gameUtils.initGameView) {
-        window.gameUtils.initGameView();
+    function finishConquerUiMount() {
+      uiOverlay.innerHTML = html;
+      var proceed = document.getElementById("risque-conquer-proceed");
+      var msgEl = uiOverlay.querySelector(
+        isGameWon ? ".risque-conquer-win-message" : ".risque-conquer-message"
+      );
+      if (isGameWon) {
+        startConfetti();
+      } else if (proceed && msgEl) {
+        setTimeout(function () {
+          msgEl.classList.add("static");
+          proceed.classList.add("visible");
+        }, 3000);
       }
-      window.gameUtils.renderTerritories(null, gs);
-      window.gameUtils.renderStats(gs);
-    });
-    onLog("Conquer phase mounted");
+      if (proceed) {
+        proceed.addEventListener("click", proceedAction);
+        proceed.addEventListener("keydown", function (e) {
+          if (e.key === "Enter" || e.key === " ") proceedAction();
+        });
+      }
+      requestAnimationFrame(function () {
+        window.gameUtils.resizeCanvas();
+        if (window.gameUtils.initGameView) {
+          window.gameUtils.initGameView();
+        }
+        window.gameUtils.renderTerritories(null, gs);
+        window.gameUtils.renderStats(gs);
+      });
+      onLog("Conquer phase mounted");
+    }
+
+    if (isGameWon) {
+      gs.winner = currentPlayer.name;
+      try {
+        localStorage.setItem("gameState", JSON.stringify(gs));
+      } catch (e1) {
+        /* ignore */
+      }
+      html =
+        '<div class="risque-conquer-player-name" style="color:' +
+        playerColor +
+        '">' +
+        currentPlayer.name +
+        "'s Victory!</div>" +
+        '<div class="risque-conquer-win-message">' +
+        currentPlayer.name +
+        " WON THE GAME!</div>" +
+        '<div class="risque-conquer-button-wrap">' +
+        '<button type="button" id="risque-conquer-proceed" class="risque-conquer-btn">Return to main menu</button>' +
+        "</div>";
+      logToStorage("Game won by player", { winner: currentPlayer.name });
+      if (typeof window.risqueReplayEnsureLatestBoardFrame === "function") {
+        try {
+          window.risqueReplayEnsureLatestBoardFrame(gs);
+        } catch (eRf) {
+          /* ignore */
+        }
+      }
+      var winDone =
+        typeof window.risqueRoundAutosaveOnGameWin === "function"
+          ? Promise.resolve(window.risqueRoundAutosaveOnGameWin(gs)).catch(function () {
+              /* non-fatal */
+            })
+          : Promise.resolve();
+      Promise.resolve(winDone).then(function () {
+        if (typeof window.risqueMirrorPushGameState === "function") {
+          try {
+            window.risqueMirrorPushGameState();
+          } catch (eMir) {
+            /* ignore */
+          }
+        }
+        finishConquerUiMount();
+      });
+    } else {
+      html =
+        '<div class="risque-conquer-player-name" style="color:' +
+        playerColor +
+        '">' +
+        currentPlayer.name +
+        "'s Conquer Phase</div>" +
+        '<div class="risque-conquer-message">' +
+        currentPlayer.name +
+        " has conquered " +
+        defeatedPlayer.name +
+        "!</div>" +
+        '<div class="risque-conquer-button-wrap">' +
+        '<button type="button" id="risque-conquer-proceed" class="risque-conquer-btn">Proceed to card transfer</button>' +
+        "</div>";
+      logToStorage("Conquer phase initialized", {
+        currentPlayer: currentPlayer.name,
+        defeatedPlayer: defeatedPlayer.name
+      });
+      finishConquerUiMount();
+    }
   }
 
   window.risquePhases = window.risquePhases || {};

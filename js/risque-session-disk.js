@@ -5,13 +5,33 @@
 (function () {
   "use strict";
 
-  /* Flat SAVE folder names (legacy risque-* names still read everywhere we scan). */
-  var RQFINAL_GAME = "game-final.json";
-  var RQFINAL_REPLAY = "replay-final.json";
-
   var cachedSessionKey = null;
   var cachedGameDh = null;
   var cachedReplayDh = null;
+
+  /** Serialize turn disk work so rapid end-turn / advance cannot interleave writes. */
+  var __risqueSessionDiskTurnWriteChain = Promise.resolve();
+  function enqueueTurnDiskWrite(fn) {
+    var p = __risqueSessionDiskTurnWriteChain.then(
+      function () {
+        return fn();
+      },
+      function () {
+        return fn();
+      }
+    );
+    __risqueSessionDiskTurnWriteChain = p.catch(function () {
+      return undefined;
+    });
+    return p;
+  }
+
+  /** Resolves after all queued turn disk writes finish (use before navigation if a caller skipped capturing ScheduleTurnCheckpoint's promise). */
+  window.risqueSessionDiskAwaitTurnWriteQueue = function () {
+    return __risqueSessionDiskTurnWriteChain.then(function () {
+      return true;
+    });
+  };
 
   function pad2(n) {
     return n < 10 ? "0" + n : String(n);
@@ -157,7 +177,6 @@
 
   window.risqueSessionDiskScheduleTurnCheckpoint = function (gs, prevPlayerName) {
     if (!gs || window.risqueDisplayIsPublic) return;
-    if (!hasWritableSaveTarget()) return;
     var turnOrder = gs.turnOrder;
     if (!Array.isArray(turnOrder) || !turnOrder.length) return;
     try {
@@ -173,15 +192,36 @@
     }
     if (!snap) return;
     var prev = prevPlayerName != null ? String(prevPlayerName) : "";
-    setTimeout(function () {
-      window.risqueSessionDiskWriteTurnCheckpoint(snap, prev);
-    }, 0);
+    var bootWait =
+      typeof window.risqueWaitForAutosaveFolderBoot === "function"
+        ? window.risqueWaitForAutosaveFolderBoot()
+        : Promise.resolve(null);
+    /* Same as round autosave: launcher health probe is async — do not skip disk while risqueLocalDiskIsActive is still false. */
+    return bootWait.then(function () {
+      if (!hasWritableSaveTarget()) return;
+      /* Do not defer with setTimeout(0): receive-card chains sync navigation on a Promise microtask
+       * (risqueNavigateWithFade → location.href) and can unload before a timer runs — dropping rNpM / rNpMgame. */
+      return enqueueTurnDiskWrite(function () {
+        return window.risqueSessionDiskWriteTurnCheckpoint(snap, prev);
+      });
+    });
   };
 
   function granularDiskNameMatch(a, b) {
     var sa = a != null ? String(a).trim().toLowerCase() : "";
     var sb = b != null ? String(b).trim().toLowerCase() : "";
     return sa !== "" && sb !== "" && sa === sb;
+  }
+
+  /** Same batting-order seat as prev (handles spelling vs turnOrder[] without losing battles on disk). */
+  function granularSameTurnSeat(turnOrder, nameA, nameB) {
+    if (granularDiskNameMatch(nameA, nameB)) return true;
+    if (!Array.isArray(turnOrder) || !turnOrder.length) return false;
+    if (typeof window.risqueReplayResolveTurnOrderIndex !== "function") return false;
+    var ta = window.risqueReplayResolveTurnOrderIndex(turnOrder, nameA);
+    var tb = window.risqueReplayResolveTurnOrderIndex(turnOrder, nameB);
+    if (!ta || !tb || ta.index < 0 || tb.index < 0) return false;
+    return ta.index === tb.index;
   }
 
   /**
@@ -200,6 +240,9 @@
       } catch (eJ) {
         return false;
       }
+      if (!rjson || String(rjson).length < 32) {
+        return Promise.resolve(false);
+      }
       return writeTextFile(replayDir, String(fname), rjson)
         .then(function () {
           return true;
@@ -217,6 +260,15 @@
   function writeGranularAttackPhaseReplay(replayDir, liveGs, snap, prevPlayerName) {
     var prev = prevPlayerName != null ? String(prevPlayerName).trim() : "";
     if (!prev || !liveGs || !replayDir) return Promise.resolve(true);
+    var turnOrderEarly = snap.turnOrder || liveGs.turnOrder;
+    if (
+      Array.isArray(turnOrderEarly) &&
+      turnOrderEarly.length &&
+      typeof window.risqueReplayResolveTurnOrderIndex === "function"
+    ) {
+      var torPrev = window.risqueReplayResolveTurnOrderIndex(turnOrderEarly, prev);
+      if (torPrev && torPrev.index >= 0 && torPrev.canonical) prev = torPrev.canonical;
+    }
     if (liveGs.risqueReplayDiskSaveDisabled === true) return Promise.resolve(true);
     try {
       if (typeof window.risqueReplayEnsureLatestBoardFrame === "function") {
@@ -243,13 +295,34 @@
     var chunk = wm < flat.length ? flat.slice(wm) : [];
     var attackOnly = [];
     var ci;
+    var ordForMatch = turnOrderEarly;
     for (ci = 0; ci < chunk.length; ci++) {
       var e = chunk[ci];
       if (!e) continue;
-      if (e.type === "board" && e.segment === "battle" && granularDiskNameMatch(e.recordedForPlayer, prev)) {
+      if (
+        e.type === "board" &&
+        e.segment === "battle" &&
+        (granularDiskNameMatch(e.recordedForPlayer, prev) || granularSameTurnSeat(ordForMatch, e.recordedForPlayer, prev))
+      ) {
         attackOnly.push(e);
-      } else if (e.type === "elimination" && granularDiskNameMatch(e.conqueror, prev)) {
+      } else if (
+        e.type === "elimination" &&
+        (granularDiskNameMatch(e.conqueror, prev) || granularSameTurnSeat(ordForMatch, e.conqueror, prev))
+      ) {
         attackOnly.push(e);
+      }
+    }
+    if (!attackOnly.length && chunk.length) {
+      for (ci = 0; ci < chunk.length; ci++) {
+        var eLo = chunk[ci];
+        if (!eLo) continue;
+        var rfp = eLo.recordedForPlayer != null ? String(eLo.recordedForPlayer).trim() : "";
+        if (eLo.type === "board" && eLo.segment === "battle" && !rfp) {
+          attackOnly.push(eLo);
+        } else if (eLo.type === "elimination") {
+          var cq = eLo.conqueror != null ? String(eLo.conqueror).trim() : "";
+          if (!cq) attackOnly.push(eLo);
+        }
       }
     }
     try {
@@ -257,7 +330,48 @@
     } catch (eWm) {
       /* ignore */
     }
-    if (!attackOnly.length) return Promise.resolve(true);
+    if (!attackOnly.length) {
+      if (!chunk.length) return Promise.resolve(true);
+      var turnOrderEmpty = snap.turnOrder || liveGs.turnOrder;
+      if (!Array.isArray(turnOrderEmpty) || !turnOrderEmpty.length) return Promise.resolve(true);
+      var piE = -1;
+      var pkE;
+      for (pkE = 0; pkE < turnOrderEmpty.length; pkE++) {
+        if (granularDiskNameMatch(turnOrderEmpty[pkE], prev)) {
+          piE = pkE;
+          break;
+        }
+      }
+      if (piE < 0) return Promise.resolve(true);
+      var nextE = (piE + 1) % turnOrderEmpty.length;
+      var completedREmpty =
+        nextE === 0
+          ? Math.max(1, (Number(snap.round) || 1) - 1)
+          : Math.max(1, Number(snap.round) || 1);
+      var fnameEmpty = "r" + completedREmpty + "p" + (piE + 1) + ".json";
+      var packEmpty =
+        typeof window.risqueReplayBuildGranularExportPack === "function"
+          ? window.risqueReplayBuildGranularExportPack(liveGs, [], {
+              replayScope: "round",
+              replayRound: completedREmpty,
+              round: completedREmpty,
+              phase: "attack",
+              currentPlayer: prev,
+              granularAttackPhase: true,
+              allowEmptyDiskSegment: true
+            })
+          : null;
+      if (!packEmpty || packEmpty.format !== "risque-replay-v1") return Promise.resolve(true);
+      var jEmpty;
+      try {
+        jEmpty = JSON.stringify(packEmpty, null, 2);
+      } catch (eJe) {
+        return Promise.resolve(true);
+      }
+      return writeTextFile(replayDir, fnameEmpty, jEmpty).catch(function () {
+        return false;
+      });
+    }
     var turnOrder = snap.turnOrder || liveGs.turnOrder;
     if (!Array.isArray(turnOrder) || !turnOrder.length) return Promise.resolve(true);
     var pi = -1;
@@ -311,36 +425,68 @@
       window.risqueSessionDiskEnsureGameDirHandle(snap),
       window.risqueSessionDiskEnsureReplayDirHandle(snap)
     ]).then(function (pair) {
+      if (!pair[0] || !pair[1]) return false;
       var gameDir = pair[0];
       var replayDir = pair[1];
-      if (!gameDir || !replayDir) return false;
-      var roundNum = Math.max(1, Math.floor(Number(snap.round) || 1));
-      var rt = roundTag2(roundNum);
       var liveGs = typeof window.gameState === "object" && window.gameState ? window.gameState : snap;
-      var seq =
-        typeof window.risqueAllocSimpleAutosaveSeq === "function"
-          ? window.risqueAllocSimpleAutosaveSeq(liveGs)
-          : 1;
-      var baseGame = "game-ckpt-r" + rt + "-" + seq;
-      var forDisk = snap;
+      var prevNm = prevPlayerName;
+      if (typeof window.risqueReplayTryWriteDdJsonAfterSetupDeploy === "function") {
+        try {
+          window.risqueReplayTryWriteDdJsonAfterSetupDeploy(liveGs);
+        } catch (eDdRetry) {
+          /* ignore */
+        }
+      }
+      var ordCk = snap.turnOrder || liveGs.turnOrder;
+      var prevCanon = prevNm;
+      if (
+        Array.isArray(ordCk) &&
+        ordCk.length &&
+        typeof window.risqueReplayResolveTurnOrderIndex === "function"
+      ) {
+        var torCk = window.risqueReplayResolveTurnOrderIndex(ordCk, prevNm);
+        if (torCk && torCk.index >= 0 && torCk.canonical) prevCanon = String(torCk.canonical);
+      }
+      var piCk = -1;
+      var pkCk;
+      for (pkCk = 0; pkCk < (ordCk || []).length; pkCk++) {
+        if (granularDiskNameMatch(ordCk[pkCk], prevCanon)) {
+          piCk = pkCk;
+          break;
+        }
+      }
+      var roundNumCk = Math.max(1, Math.floor(Number(snap.round) || 1));
+      var gnameCk;
+      if (piCk >= 0 && Array.isArray(ordCk) && ordCk.length) {
+        var nextAfterPrevCk = (piCk + 1) % ordCk.length;
+        var completedRoundCk =
+          nextAfterPrevCk === 0
+            ? Math.max(1, (Number(snap.round) || 1) - 1)
+            : Math.max(1, Number(snap.round) || 1);
+        gnameCk = "r" + completedRoundCk + "p" + (piCk + 1) + "game.json";
+      } else {
+        gnameCk = "r" + roundNumCk + "p0game.json";
+      }
+      var forDiskCk = liveGs;
       try {
         if (typeof window.risqueStripReplayFromGameStateClone === "function") {
-          forDisk = window.risqueStripReplayFromGameStateClone(snap);
+          forDiskCk = window.risqueStripReplayFromGameStateClone(liveGs);
         }
-      } catch (eSt) {
-        forDisk = snap;
+      } catch (eStripCk) {
+        forDiskCk = liveGs;
       }
-      var payload;
+      var payloadCk;
       try {
-        payload = JSON.stringify(forDisk, null, 2);
-      } catch (eP) {
-        return false;
+        payloadCk = JSON.stringify(forDiskCk, null, 2);
+      } catch (eJsonCk) {
+        return Promise.resolve(false);
       }
-      var gname = baseGame + ".json";
-      var prevNm = prevPlayerName;
-      return writeTextFile(gameDir, gname, payload)
+      return writeTextFile(gameDir, gnameCk, payloadCk)
         .then(function () {
           return writeGranularAttackPhaseReplay(replayDir, liveGs, snap, prevNm);
+        })
+        .then(function (granRes) {
+          return granRes !== false;
         })
         .catch(function () {
           return false;
@@ -536,6 +682,27 @@
             /* ignore */
           }
         }
+        if (typeof window.risqueReplayStripBackwardStampedRoundBoards === "function") {
+          try {
+            var evDiskPre = mergedPack.tape.events.length;
+            var st = window.risqueReplayStripBackwardStampedRoundBoards(mergedPack.tape.events.slice());
+            mergedPack.tape.events = st.events;
+            if (typeof window.risqueReplayDebugLog === "function") {
+              window.risqueReplayDebugLog(
+                "disk prepend strip",
+                "in=" + evDiskPre,
+                "out=" + mergedPack.tape.events.length,
+                "skipped=" + (st.skipped || 0)
+              );
+            }
+            if (st.skipped > 0 && st.message) {
+              if (!mergedPack.__mergeWarnings) mergedPack.__mergeWarnings = [];
+              if (mergedPack.__mergeWarnings.indexOf(st.message) === -1) mergedPack.__mergeWarnings.push(st.message);
+            }
+          } catch (eStrip) {
+            /* ignore */
+          }
+        }
         return mergedPack;
       });
     });
@@ -596,344 +763,74 @@
 
   window.risqueSessionDiskScheduleReplayStitchTidyOnResume = function () {};
 
-  /** Delete turn checkpoints for a completed round (after round autosave succeeds). */
-  window.risqueSessionDiskDeleteTurnCheckpointsForRound = function (gs, completedRound) {
-    if (!gs || window.risqueDisplayIsPublic) return Promise.resolve();
-    if (!hasWritableSaveTarget()) return Promise.resolve();
-    var r = Math.max(1, Math.floor(Number(completedRound) || 1));
-    var rt = roundTag2(r);
-    var prefixGame = "game-ckpt-r" + rt + "-";
-    var prefixReplay = "replay-ckpt-r" + rt + "-";
-    var prefixLegacy = "risque-ckpt-r" + rt + "-";
-    return Promise.all([
-      window.risqueSessionDiskEnsureGameDirHandle(gs),
-      window.risqueSessionDiskEnsureReplayDirHandle(gs)
-    ]).then(function (pair) {
-      var gameDir = pair[0];
-      var replayDir = pair[1];
-      if (!gameDir || !replayDir) return;
-      if (gameDir.__risqueVirtualDir && replayDir.__risqueVirtualDir) {
-        var gRel = virtualRelDir(gameDir);
-        var rRel = virtualRelDir(replayDir);
-        return Promise.all([
-          typeof window.risqueLocalDiskDeletePrefix === "function"
-            ? window.risqueLocalDiskDeletePrefix(gRel, prefixGame)
-            : Promise.resolve(),
-          typeof window.risqueLocalDiskDeletePrefix === "function"
-            ? window.risqueLocalDiskDeletePrefix(gRel, prefixLegacy)
-            : Promise.resolve(),
-          typeof window.risqueLocalDiskDeletePrefix === "function"
-            ? window.risqueLocalDiskDeletePrefix(rRel, prefixReplay)
-            : Promise.resolve(),
-          typeof window.risqueLocalDiskDeletePrefix === "function"
-            ? window.risqueLocalDiskDeletePrefix(rRel, prefixLegacy)
-            : Promise.resolve()
-        ]);
-      }
-      if (typeof gameDir.entries !== "function" || typeof replayDir.entries !== "function") return;
-      return Promise.all([
-        deleteEntriesMatching(gameDir, function (name) {
-          var s = String(name);
-          return s.indexOf(prefixGame) === 0 || s.indexOf(prefixLegacy) === 0;
-        }),
-        deleteEntriesMatching(replayDir, function (name) {
-          var s = String(name);
-          return s.indexOf(prefixReplay) === 0 || s.indexOf(prefixLegacy) === 0;
-        })
-      ]);
-    });
+  /**
+   * Legacy hook after round autosave. Policy: never delete DD, rNpM.json, rNpMgame.json, or ckpt-* files from disk.
+   */
+  window.risqueSessionDiskDeleteTurnCheckpointsForRound = function () {
+    return Promise.resolve();
   };
-
-  function deleteEntriesMatching(dirHandle, pred) {
-    if (dirHandle && dirHandle.__risqueVirtualDir) {
-      var relDir = virtualRelDir(dirHandle);
-      if (typeof window.risqueLocalDiskListDir !== "function" || typeof window.risqueLocalDiskDeleteFiles !== "function") {
-        return Promise.resolve();
-      }
-      return window.risqueLocalDiskListDir(relDir).then(function (j) {
-        if (!j || !j.ok || !Array.isArray(j.entries)) return;
-        var toDel = [];
-        j.entries.forEach(function (e) {
-          var n = e && e.name ? String(e.name) : "";
-          var kind = e && e.kind ? String(e.kind) : "file";
-          if (kind !== "file" && kind !== "") return;
-          if (pred(n)) toDel.push(relDir + "/" + n);
-        });
-        if (toDel.length) return window.risqueLocalDiskDeleteFiles(toDel);
-      });
-    }
-    return (async function () {
-      try {
-        var iter = dirHandle.entries();
-        for await (var step of iter) {
-          var name = step[0];
-          if (pred(name)) {
-            try {
-              await dirHandle.removeEntry(name);
-            } catch (eRm) {
-              /* ignore */
-            }
-          }
-        }
-      } catch (eIt) {
-        /* ignore */
-      }
-    })();
-  }
-
-  /** Delete files where pred(name) is true; returns Promise resolving to removed count. */
-  function deleteFilesMatchingCount(dirHandle, pred) {
-    if (!dirHandle) return Promise.resolve(0);
-    if (dirHandle.__risqueVirtualDir) {
-      var relDir = virtualRelDir(dirHandle);
-      if (
-        typeof window.risqueLocalDiskListDir !== "function" ||
-        typeof window.risqueLocalDiskDeleteFiles !== "function"
-      ) {
-        return Promise.resolve(0);
-      }
-      return window.risqueLocalDiskListDir(relDir).then(function (j) {
-        if (!j || !j.ok || !Array.isArray(j.entries)) return 0;
-        var toDel = [];
-        j.entries.forEach(function (e) {
-          var n = e && e.name ? String(e.name) : "";
-          var kind = e && e.kind ? String(e.kind) : "file";
-          if (kind !== "file" && kind !== "") return;
-          if (pred(n)) toDel.push((relDir ? relDir + "/" : "") + n);
-        });
-        if (!toDel.length) return 0;
-        return window.risqueLocalDiskDeleteFiles(toDel).then(function () {
-          return toDel.length;
-        });
-      });
-    }
-    if (typeof dirHandle.entries !== "function") return Promise.resolve(0);
-    return (async function () {
-      var count = 0;
-      try {
-        var iter = dirHandle.entries();
-        for await (var step of iter) {
-          var name = step[0];
-          if (pred(name)) {
-            try {
-              await dirHandle.removeEntry(name);
-              count++;
-            } catch (eRm) {
-              /* ignore */
-            }
-          }
-        }
-      } catch (eIt) {
-        /* ignore */
-      }
-      return count;
-    })();
-  }
-
-  function checkpointRoundFromFilename(name) {
-    var m = String(name).match(/^(?:risque-ckpt|game-ckpt|replay-ckpt)-r(\d+)-/i);
-    return m ? parseInt(m[1], 10) : null;
-  }
 
   /**
-   * Remove turn-checkpoint files for rounds strictly before gs.round (orphans after crashes or failed deletes).
-   * Never removes checkpoints for the live round — those may still be needed for mid-round recovery.
+   * Legacy periodic cleanup from game-shell. Policy: no automatic removal of session saves.
    */
-  window.risqueSessionDiskCleanupStaleCheckpoints = function (gs) {
-    if (!gs || window.risqueDisplayIsPublic) return Promise.resolve(0);
-    if (!hasWritableSaveTarget()) return Promise.resolve(0);
-    var curR = Math.max(1, Math.floor(Number(gs.round) || 1));
-    function pred(name) {
-      var rr = checkpointRoundFromFilename(name);
-      return rr != null && isFinite(rr) && rr < curR;
+  window.risqueSessionDiskCleanupStaleCheckpoints = function () {
+    return Promise.resolve(0);
+  };
+
+  /**
+   * Last battle wins the game without a receivecard turn checkpoint — {@link writeGranularAttackPhaseReplay}
+   * never ran with a 2+ player turnOrder (length 1 breaks rNpM math). Attack sets {@link gs.risqueReplayGameWinDiskFlush}
+   * before the final turnOrder shrink; we replay a normal turn checkpoint using that snapshot so rNpM + rNpMgame
+   * land on disk before celebration UI.
+   */
+  window.risqueSessionDiskFlushReplayAfterGameWin = function (gs) {
+    if (!gs || window.risqueDisplayIsPublic) return Promise.resolve(false);
+    var meta = gs.risqueReplayGameWinDiskFlush;
+    if (!meta || !Array.isArray(meta.turnOrderBefore) || meta.turnOrderBefore.length < 2) {
+      return Promise.resolve(false);
     }
-    return Promise.all([
-      window.risqueSessionDiskEnsureGameDirHandle(gs),
-      window.risqueSessionDiskEnsureReplayDirHandle(gs)
-    ]).then(function (pair) {
-      var gameDir = pair[0];
-      var replayDir = pair[1];
-      if (!gameDir || !replayDir) return 0;
-      return Promise.all([
-        deleteFilesMatchingCount(gameDir, pred),
-        deleteFilesMatchingCount(replayDir, pred)
-      ]).then(function (parts) {
-        return (parts[0] || 0) + (parts[1] || 0);
-      });
+    var prev = meta.conqueror != null ? String(meta.conqueror).trim() : "";
+    if (!prev || typeof window.risqueSessionDiskWriteTurnCheckpoint !== "function") {
+      return Promise.resolve(false);
+    }
+    var snap = {
+      turnOrder: meta.turnOrderBefore,
+      round: Math.max(1, Number(meta.roundAtElimination) || 1)
+    };
+    var bootWait =
+      typeof window.risqueWaitForAutosaveFolderBoot === "function"
+        ? window.risqueWaitForAutosaveFolderBoot()
+        : Promise.resolve(null);
+    return bootWait.then(function () {
+      return Promise.resolve(window.risqueSessionDiskWriteTurnCheckpoint(snap, prev))
+        .then(function (ok) {
+          return !!ok;
+        })
+        .catch(function () {
+          return false;
+        })
+        .then(function (ok) {
+          try {
+            delete gs.risqueReplayGameWinDiskFlush;
+          } catch (eDel) {
+            /* ignore */
+          }
+          return ok;
+        });
     });
   };
 
-  /** After game win: write consolidated pair and remove intermediate JSON in both session dirs. */
+  /**
+   * After game win: previously wrote game-final.json + replay-final.json and deleted intermediate session JSON.
+   * Policy: do not consolidate or remove anything — keep all per-round / granular saves for Wayback and experiments.
+   * Postgame "ARCHIVE GAME REPLAY" still writes an explicit full-session file when you choose.
+   */
   window.risqueSessionDiskFinalizeGameWin = function (gs) {
     if (!gs || window.risqueDisplayIsPublic) return Promise.resolve(false);
     if (!gs.risqueGameWinAutosaved) return Promise.resolve(false);
     if (!hasWritableSaveTarget()) return Promise.resolve(false);
-    return Promise.all([
-      window.risqueSessionDiskEnsureGameDirHandle(gs),
-      window.risqueSessionDiskEnsureReplayDirHandle(gs)
-    ]).then(function (pair) {
-      var gameDir = pair[0];
-      var replayDir = pair[1];
-      if (!gameDir || !replayDir) return false;
-      var forDisk = gs;
-      try {
-        if (typeof window.risqueStripReplayFromGameStateClone === "function") {
-          forDisk = window.risqueStripReplayFromGameStateClone(gs);
-        }
-      } catch (eF) {
-        forDisk = gs;
-      }
-      var gjson;
-      try {
-        gjson = JSON.stringify(forDisk, null, 2);
-      } catch (eG) {
-        return false;
-      }
-      var replayPack = null;
-      try {
-        replayPack =
-          typeof window.risqueBuildSessionReplayExport === "function"
-            ? window.risqueBuildSessionReplayExport(gs)
-            : null;
-      } catch (eRp) {
-        replayPack = null;
-      }
-      return window.risqueSessionDiskStitchAndTidyReplayFolder(gs)
-        .catch(function () {
-          /* non-fatal */
-        })
-        .then(function () {
-          return writeTextFile(gameDir, RQFINAL_GAME, gjson);
-        })
-        .then(function () {
-          if (!replayPack || replayPack.format !== "risque-replay-v1") return Promise.resolve();
-          var rjson;
-          try {
-            rjson = JSON.stringify(replayPack, null, 2);
-          } catch (eJ) {
-            return Promise.resolve();
-          }
-          return writeTextFile(replayDir, RQFINAL_REPLAY, rjson);
-        })
-        .then(function () {
-          return Promise.all([sweepIntermediateFiles(gameDir), sweepIntermediateFiles(replayDir)]);
-        })
-        .then(function () {
-          return true;
-        })
-        .catch(function () {
-          return false;
-        });
-    });
+    return Promise.resolve(true);
   };
-
-  function sweepIntermediateFiles(sessionDh) {
-    if (sessionDh && sessionDh.__risqueVirtualDir) {
-      var relDir = virtualRelDir(sessionDh);
-      if (typeof window.risqueLocalDiskListDir !== "function" || typeof window.risqueLocalDiskDeleteFiles !== "function") {
-        return Promise.resolve();
-      }
-      return window.risqueLocalDiskListDir(relDir).then(function (j) {
-        if (!j || !j.ok || !Array.isArray(j.entries)) return;
-        var toDel = [];
-        j.entries.forEach(function (e) {
-          var name = e && e.name ? String(e.name) : "";
-          var kind = e && e.kind ? String(e.kind) : "file";
-          if (!name || (kind !== "file" && kind !== "")) return;
-          var ln = name.toLowerCase();
-          var normSlash = String(name).replace(/\\/g, "/");
-          if (/^replay-discard\//i.test(normSlash)) {
-            return;
-          }
-          if (/^rqdiscard-/i.test(name)) {
-            return;
-          }
-          if (
-            ln === RQFINAL_GAME.toLowerCase() ||
-            ln === RQFINAL_REPLAY.toLowerCase() ||
-            ln === "replay-full.json" ||
-            ln === "risque-full-replay.json"
-          ) {
-            return;
-          }
-          /* Granular Wayback bisection tapes — keep after session finalize. */
-          if (ln === "replay-deal.json" || /^r\d+p\d+-replay\.json$/i.test(name)) {
-            return;
-          }
-          var isOurs =
-            /^risque-ckpt-/i.test(name) ||
-            /^game-ckpt-/i.test(name) ||
-            /^replay-ckpt-/i.test(name) ||
-            /^risque-game-/i.test(name) ||
-            /^risque-replay-/i.test(name) ||
-            /^game\d+\.json$/i.test(ln) ||
-            /^replay\d+\.json$/i.test(ln) ||
-            /^game-emergency-/i.test(name) ||
-            /^replay-emergency-/i.test(name) ||
-            /^risque-emergency-/i.test(name) ||
-            /^rqck-/i.test(name) ||
-            /^rqgs-/i.test(name) ||
-            /^rqem-/i.test(name) ||
-            /^rqrp/i.test(name) ||
-            (ln.endsWith("-replay.json") && !/^rqfinal-/.test(ln) && !/^rqwb-/.test(ln));
-          if (!isOurs) return;
-          toDel.push((relDir ? relDir + "/" : "") + name);
-        });
-        if (toDel.length) return window.risqueLocalDiskDeleteFiles(toDel);
-      });
-    }
-    return (async function () {
-      try {
-        var iter = sessionDh.entries();
-        for await (var step of iter) {
-          var name = step[0];
-          var ln = String(name).toLowerCase();
-          var normSlashN = String(name).replace(/\\/g, "/");
-          if (/^replay-discard(\/|$)/i.test(normSlashN)) {
-            continue;
-          }
-          if (/^rqdiscard-/i.test(name)) {
-            continue;
-          }
-          if (
-            ln === RQFINAL_GAME.toLowerCase() ||
-            ln === RQFINAL_REPLAY.toLowerCase() ||
-            ln === "replay-full.json" ||
-            ln === "risque-full-replay.json"
-          ) {
-            continue;
-          }
-          if (ln === "replay-deal.json" || /^r\d+p\d+-replay\.json$/i.test(String(name))) {
-            continue;
-          }
-          var isOurs =
-            /^risque-ckpt-/i.test(name) ||
-            /^game-ckpt-/i.test(name) ||
-            /^replay-ckpt-/i.test(name) ||
-            /^risque-game-/i.test(name) ||
-            /^risque-replay-/i.test(name) ||
-            /^game\d+\.json$/i.test(ln) ||
-            /^replay\d+\.json$/i.test(ln) ||
-            /^game-emergency-/i.test(name) ||
-            /^replay-emergency-/i.test(name) ||
-            /^risque-emergency-/i.test(name) ||
-            /^rqck-/i.test(name) ||
-            /^rqgs-/i.test(name) ||
-            /^rqem-/i.test(name) ||
-            /^rqrp/i.test(name) ||
-            (ln.endsWith("-replay.json") && !/^rqfinal-/.test(ln) && !/^rqwb-/.test(ln));
-          if (!isOurs) continue;
-          try {
-            await sessionDh.removeEntry(name);
-          } catch (eR2) {
-            /* ignore */
-          }
-        }
-      } catch (eSw) {
-        /* ignore */
-      }
-    })();
-  }
 
   window.risqueSessionDiskWriteTextFile = function (dirHandle, fname, text) {
     if (!dirHandle) return Promise.resolve(false);

@@ -15,7 +15,7 @@
     var s = document.createElement("style");
     s.id = STYLE_ID;
     s.textContent =
-      "#risque-privacy-overlay{position:fixed;inset:0;z-index:999998;margin:0;padding:0;" +
+      "#risque-privacy-overlay{position:fixed;inset:0;z-index:2147483646;margin:0;padding:0;" +
       "display:flex;flex-direction:column;justify-content:center;align-items:center;" +
       "background:#000000;font-family:Arial,sans-serif;box-sizing:border-box;}" +
       "#risque-privacy-overlay *{box-sizing:border-box;}" +
