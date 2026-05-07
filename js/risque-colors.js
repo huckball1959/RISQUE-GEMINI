@@ -9,7 +9,7 @@
     blue: "#87bfff",
     red: "#ff0000",
     yellow: "#ffff00",
-    green: "#8fd8a8",
+    green: "#ff9800",
     pink: "#ff69b4",
     white: "#f8fafc"
   };
@@ -50,6 +50,11 @@
     return { color: "#000000", width: 2 };
   }
 
+  /** Map/render saturation multiplier (1 = unchanged). */
+  function mapSaturation() {
+    return 0.40625;
+  }
+
   function applyCssVars() {
     if (!document || !document.documentElement || !document.documentElement.style) return;
     var st = document.documentElement.style;
@@ -67,6 +72,7 @@
     statsUseLightText: statsUseLightText,
     markerOwnedCenterFill: markerOwnedCenterFill,
     markerRingInnerStroke: markerRingInnerStroke,
+    mapSaturation: mapSaturation,
     applyCssVars: applyCssVars
   };
 
@@ -76,6 +82,7 @@
   window.risqueStatsUseLightText = statsUseLightText;
   window.risqueMarkerOwnedCenterFill = markerOwnedCenterFill;
   window.risqueMarkerRingInnerStroke = markerRingInnerStroke;
+  window.risqueMapSaturation = mapSaturation;
 
   try {
     applyCssVars();

@@ -49,6 +49,22 @@ html, body {
 .stage-image.visible {
   display: block;
 }
+.stage-image-desat-mask {
+  position: absolute;
+  width: 1920px;
+  height: 1080px;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  object-fit: contain;
+  pointer-events: none;
+  /* Left map square only: 1080x1080 with 20px inset on each edge -> 1040x1040 active mask. */
+  clip-path: inset(20px 860px 20px 20px);
+  display: none;
+}
+.stage-image-desat-mask.visible {
+  display: block;
+}
 .svg-overlay {
   position: absolute;
   width: 1920px;

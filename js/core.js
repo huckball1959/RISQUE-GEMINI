@@ -606,6 +606,21 @@ window.gameUtils = {
       .stage-image.visible {
         display: block;
       }
+      .stage-image-desat-mask {
+        position: absolute;
+        width: 1920px;
+        height: 1080px;
+        top: 0;
+        left: 0;
+        z-index: 0;
+        object-fit: contain;
+        pointer-events: none;
+        clip-path: inset(20px 860px 20px 20px);
+        display: none;
+      }
+      .stage-image-desat-mask.visible {
+        display: block;
+      }
       .svg-overlay {
         position: absolute;
         width: 1920px;
@@ -791,6 +806,16 @@ window.gameUtils = {
       canvasWrapper.appendChild(stageImage);
       risqueCoreDebugLog('[Core] Stage image created');
     }
+    let stageImageDesat = document.querySelector('.stage-image-desat-mask');
+    if (!stageImageDesat) {
+      stageImageDesat = document.createElement('img');
+      stageImageDesat.src = 'assets/images/stage.png';
+      stageImageDesat.alt = '';
+      stageImageDesat.setAttribute('aria-hidden', 'true');
+      stageImageDesat.className = 'stage-image-desat-mask';
+      canvasWrapper.appendChild(stageImageDesat);
+      risqueCoreDebugLog('[Core] Stage desaturation mask created');
+    }
     let svgOverlay = document.querySelector('.svg-overlay');
     if (!svgOverlay) {
       svgOverlay = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -801,6 +826,14 @@ window.gameUtils = {
       canvasWrapper.appendChild(svgOverlay);
       risqueCoreDebugLog('[Core] SVG overlay created');
     }
+    var sat = typeof window.risqueMapSaturation === 'function' ? Number(window.risqueMapSaturation()) : 1;
+    if (!Number.isFinite(sat) || sat <= 0) sat = 1;
+    if (sat > 2) sat = 2;
+    var satCss = 'saturate(' + String(sat) + ')';
+    /* Desaturate map art mask only — keep territory markers/numbers at full color. */
+    stageImage.style.filter = '';
+    stageImageDesat.style.filter = satCss;
+    svgOverlay.style.filter = '';
     this.resizeCanvas();
     risqueCoreDebugLog('[Core] Game view initialized');
   },
@@ -2401,9 +2434,11 @@ window.gameUtils = {
     canvas.style.transform = `translate(-50%, 0) scale(${scale})`;
     canvas.classList.add('visible');
     const stageImage = document.querySelector('.stage-image');
+    const stageImageDesat = document.querySelector('.stage-image-desat-mask');
     const svgOverlay = document.querySelector('.svg-overlay');
     const uiOverlay = document.querySelector('.ui-overlay');
     if (stageImage) stageImage.classList.add('visible');
+    if (stageImageDesat) stageImageDesat.classList.add('visible');
     if (svgOverlay) svgOverlay.classList.add('visible');
     if (uiOverlay) uiOverlay.classList.add('visible');
     risqueCoreDebugLog('[Core] Canvas scaled:', { scale, innerWidth: window.innerWidth, innerHeight: window.innerHeight });
