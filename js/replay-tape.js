@@ -257,11 +257,6 @@
     return true;
   }
 
-  /** Host map toggle: skip replay tape accumulation and replay disk exports when true (lighter CPU/RAM for testing). */
-  window.risqueReplaySavePaused = function (gs) {
-    return !!(gs && gs.risqueReplayDiskSaveDisabled);
-  };
-
   function ensureTape(gs) {
     if (!gs || typeof gs !== "object") return;
     if (!gs.risqueReplayTape || typeof gs.risqueReplayTape !== "object") {
@@ -400,7 +395,7 @@
   }
 
   window.risqueReplaySeedOpening = function (gs) {
-    if (!shouldRecord(gs) || window.risqueReplaySavePaused(gs)) return;
+    if (!shouldRecord(gs)) return;
     ensureTape(gs);
     ensureReplayTapeSessionKey(gs);
     migrateLegacyTapeToByRound(gs);
@@ -423,7 +418,7 @@
   };
 
   window.risqueReplayRecordDeal = function (gs) {
-    if (!shouldRecord(gs) || window.risqueReplaySavePaused(gs)) return;
+    if (!shouldRecord(gs)) return;
     ensureTape(gs);
     ensureReplayTapeSessionKey(gs);
     var tape = gs.risqueReplayTape;
@@ -455,7 +450,7 @@
   }
 
   window.risqueReplayRecordDeploy = function (gs) {
-    if (!shouldRecord(gs) || window.risqueReplaySavePaused(gs)) return;
+    if (!shouldRecord(gs)) return;
     ensureOpeningFrom(gs);
     pushRaw(gs, { type: "board", segment: "deploy", board: snapshotBoard(gs) });
   };
@@ -520,7 +515,9 @@
    * Called when all players finish starting deployment (setup deploy).
    */
   function tryFlushGranularDealDeployReplay(gs) {
-    if (!shouldRecord(gs) || window.risqueReplaySavePaused(gs)) return;
+    if (!shouldRecord(gs)) return;
+    /* DD.json disk export only — keep off when host disables replay disk writes (default). In-memory tape still records. */
+    if (gs.risqueReplayDiskSaveDisabled === true) return;
     if (gs.risqueReplayDealDeployDiskWritten) return;
     if (gs.__risqueReplayDealFlushInFlight) return;
     if (typeof window.risqueSessionDiskWriteReplayPackNamed !== "function") return;
@@ -597,20 +594,20 @@
   window.risqueReplayTryWriteDdJsonAfterSetupDeploy = tryFlushGranularDealDeployReplay;
 
   window.risqueReplayRecordBattle = function (gs) {
-    if (!shouldRecord(gs) || window.risqueReplaySavePaused(gs)) return;
+    if (!shouldRecord(gs)) return;
     ensureOpeningFrom(gs);
     pushRaw(gs, { type: "board", segment: "battle", board: snapshotBoard(gs) });
   };
 
   /** Fortify / reinforcement transfers — kept distinct from battle frames so replay can include final moves. */
   window.risqueReplayRecordReinforce = function (gs) {
-    if (!shouldRecord(gs) || window.risqueReplaySavePaused(gs)) return;
+    if (!shouldRecord(gs)) return;
     ensureOpeningFrom(gs);
     pushRaw(gs, { type: "board", segment: "reinforce", board: snapshotBoard(gs) });
   };
 
   window.risqueReplayRecordElimination = function (gs, conqueror, defeated) {
-    if (!shouldRecord(gs) || window.risqueReplaySavePaused(gs)) return;
+    if (!shouldRecord(gs)) return;
     ensureTape(gs);
     ensureReplayTapeSessionKey(gs);
     var defName = defeated != null ? String(defeated).trim() : "";
@@ -716,7 +713,7 @@
    */
   window.risqueReplayEnsureLatestBoardFrame = function (gs) {
     if (!gs || typeof gs !== "object") return false;
-    if (!shouldRecord(gs) || window.risqueReplaySavePaused(gs)) return false;
+    if (!shouldRecord(gs)) return false;
     ensureOpeningFrom(gs);
     var curr = snapshotBoard(gs);
     var currJ = boardJsonStable(curr);
@@ -1695,4 +1692,74 @@
     }
     return mergedPack;
   };
+
+  /**
+   * Lean localStorage gameState (speed): strip replay keys before persist. Default ON.
+   * Opt out (full tape in LS after reload): `?lsReplayLite=0` or `localStorage.setItem('risqueLsReplayLite','0')`.
+   * Opt in explicitly: `?lsReplayLite=1` or `risqueLsReplayLite=1` (same as default since default is on).
+   */
+  function risqueLsReplayLiteEffective() {
+    try {
+      if (typeof window !== "undefined" && window.location) {
+        var q = new URL(window.location.href).searchParams.get("lsReplayLite");
+        if (q === "0") return false;
+        if (q === "1") return true;
+      }
+      if (typeof localStorage !== "undefined") {
+        var v = localStorage.getItem("risqueLsReplayLite");
+        if (v === "0") return false;
+        if (v === "1") return true;
+      }
+    } catch (e) {
+      /* ignore */
+    }
+    return true;
+  }
+  window.risqueLsReplayLiteEffective = risqueLsReplayLiteEffective;
+
+  var __risqueLsReplayLiteLogged = false;
+  function risqueMaybeLogLsReplayLitePatchOnce() {
+    if (__risqueLsReplayLiteLogged || !risqueLsReplayLiteEffective()) return;
+    __risqueLsReplayLiteLogged = true;
+    try {
+      console.info(
+        "[RISQUE] Lean localStorage gameState (default): replay tape omitted from localStorage for speed. " +
+          "Live replay unchanged in memory. Opt out: ?lsReplayLite=0 or localStorage risqueLsReplayLite=0."
+      );
+    } catch (eL) {
+      /* ignore */
+    }
+  }
+
+  (function patchLocalStorageGameStateReplayStrip() {
+    var SK = "gameState";
+    try {
+      var _origSetItem = Storage.prototype.setItem;
+      Storage.prototype.setItem = function (key, value) {
+        if (key !== SK || typeof value !== "string") {
+          return _origSetItem.apply(this, arguments);
+        }
+        if (!risqueLsReplayLiteEffective()) {
+          return _origSetItem.apply(this, arguments);
+        }
+        try {
+          var parsed = JSON.parse(value);
+          if (!parsed || typeof parsed !== "object") {
+            return _origSetItem.apply(this, arguments);
+          }
+          risqueMaybeLogLsReplayLitePatchOnce();
+          var slim =
+            typeof window.risqueStripReplayFromGameStateClone === "function"
+              ? window.risqueStripReplayFromGameStateClone(parsed)
+              : parsed;
+          value = JSON.stringify(slim);
+        } catch (e) {
+          /* keep original value */
+        }
+        return _origSetItem.call(this, key, value);
+      };
+    } catch (ePatch) {
+      /* ignore */
+    }
+  })();
 })();

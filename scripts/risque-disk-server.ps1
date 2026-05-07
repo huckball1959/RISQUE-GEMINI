@@ -4,7 +4,7 @@
   Loopback HTTP API so file:// RISQUE host can write SAVE without File System Access picker.
 
 .DESCRIPTION
-  Mirrors scripts/risque-disk-server.py: GET /api/health, POST /api/write|read|list|delete-files|delete-prefix.
+  GET /api/health, POST /api/write|read|list|delete-files|delete-prefix.
   RISQUE.ps1 starts this in the background before opening Chromium when launching local file:// builds.
 
 .PARAMETER SaveRoot

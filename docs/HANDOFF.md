@@ -90,6 +90,33 @@ This can block attack clicks later because attack code early-returns when pendin
 - Those warnings can be noisy and occasionally interfere with browser behavior.
 - Prefer running under local HTTP (e.g., localhost) for consistent behavior.
 
+## Load Game Regression Note (2026-05-07)
+
+### Symptom
+- User selects **LOAD GAME**, file parses successfully, but runtime still appears to show the current session state.
+- Seen in both login load flow and corner-tool load flow at different times.
+
+### Root Cause Pattern
+- Loaded `gameState` was written, but stale session sidecars/mirror data could survive and visually dominate.
+- Corner load path had weaker handling than login load:
+  - did not normalize wrapped payloads first (`{ gameState: ... }`)
+  - did not consistently clear session sidecars before persist
+  - did not force immediate in-memory host-state replacement after persist
+
+### Fixes Applied
+- `phases/login.js` (both load handlers):
+  - clear old session via `risqueClearStoredSessionForNewGame()` before persist
+  - call `risqueHostReplaceShellGameState(gs)` after persist
+- `js/game-shell.js` (board-corner load handler):
+  - normalize via `login.normalizeImportedGameState(...)` when available
+  - clear session via `risqueClearStoredSessionForNewGame()` before `saveState(normalized)`
+  - call `risqueHostReplaceShellGameState(normalized)` after save
+
+### If It Reappears
+1. Confirm which load entrypoint is used (login button vs board corner button).
+2. Add temporary log/notice showing loaded `phase/currentPlayer/round` immediately after parse and immediately before navigate.
+3. Verify `localStorage["gameState"]` changed to the new payload and no stale sidecar overwrite occurs after load.
+
 ## Suggested Next Improvements
 
 - Add a one-time user-facing notice when sanitizer repairs stale save state.

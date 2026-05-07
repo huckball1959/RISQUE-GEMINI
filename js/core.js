@@ -196,17 +196,45 @@ window.gameUtils = {
       }
     }
   },
-  colorMap: {
-    blue: "#87bfff",
-    red: "#ff0000",
-    pink: "#ff69b4",
-    black: "#333333",
-    green: "#008000",
-    yellow: "#ffff00"
+  colorMap:
+    typeof window !== "undefined" &&
+    window.risquePlayerColors &&
+    window.risquePlayerColors.base
+      ? Object.assign({}, window.risquePlayerColors.base, { black: window.risquePlayerColors.base.white })
+      : {
+          blue: "#87bfff",
+          red: "#ff0000",
+          pink: "#ff69b4",
+          black: "#f8fafc",
+          white: "#f8fafc",
+          green: "#8fd8a8",
+          yellow: "#ffff00"
+        },
+  /**
+   * STATS panel row background only (HUD table + SVG stats-group). Map and markers keep {@link colorMap}.
+   * Colors resolve from risque-colors.js (single source of truth).
+   */
+  statsPanelPlayerBgHex: function(colorKey) {
+    if (typeof window !== "undefined" && typeof window.risqueColorHex === "function") {
+      return window.risqueColorHex(colorKey);
+    }
+    const k = colorKey != null ? String(colorKey).trim().toLowerCase() : "";
+    return this.colorMap[k] || "#808080";
+  },
+  /** STATS row: light text on dark-ish fills vs dark text on pastels (blue/green/yellow). */
+  statsPanelPlayerUseLightText: function(colorKey) {
+    if (typeof window !== "undefined" && typeof window.risqueStatsUseLightText === "function") {
+      return window.risqueStatsUseLightText(colorKey);
+    }
+    const k = colorKey != null ? String(colorKey).trim().toLowerCase() : "";
+    return k === "red" || k === "pink";
   },
   /** Resolve player.color to a hex (handles saved casing / spacing). */
   colorHexForPlayer: function(player) {
     if (!player || player.color == null || String(player.color).trim() === '') return null;
+    if (typeof window !== "undefined" && typeof window.risqueColorHex === "function") {
+      return window.risqueColorHex(player.color);
+    }
     const k = String(player.color).trim().toLowerCase();
     return this.colorMap[k] || null;
   },
@@ -1298,7 +1326,11 @@ window.gameUtils = {
         circle.setAttributeNS(
           null,
           'fill',
-          !playerName ? (isDeployed ? '#ffffff' : color) : '#000000'
+          !playerName
+            ? (isDeployed ? '#ffffff' : color)
+            : (typeof window.risqueMarkerOwnedCenterFill === "function"
+                ? window.risqueMarkerOwnedCenterFill()
+                : "#000000")
         );
         circle.setAttributeNS(null, 'stroke', playerName ? color : '#000000');
         circle.setAttributeNS(null, 'stroke-width', playerName ? '7' : (isDeployed ? '4' : '2'));
@@ -1456,7 +1488,10 @@ window.gameUtils = {
         const MARKER_OUTLINE_STROKE_W = 3;
         const markerOutlineRadiusOffset = (MARKER_RING_STROKE_W + MARKER_OUTLINE_STROKE_W) / 2;
         const markerOutlineRadiusFor = rBase => Math.max(0, Number(rBase) + markerOutlineRadiusOffset);
+        const markerInnerSeparatorRadiusFor = rBase =>
+          Math.max(0, Number(rBase) - MARKER_RING_STROKE_W / 2);
         let markerOutline = null;
+        let markerInnerSeparator = null;
         if (playerName) {
           markerOutline = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
           markerOutline.setAttributeNS(null, 'cx', territory.x);
@@ -1468,6 +1503,27 @@ window.gameUtils = {
           markerOutline.setAttributeNS(null, 'data-label', label);
           markerOutline.setAttributeNS(null, 'aria-hidden', 'true');
           markerOutline.style.pointerEvents = 'none';
+          var sep =
+            typeof window.risqueMarkerRingInnerStroke === "function"
+              ? window.risqueMarkerRingInnerStroke()
+              : { color: "#000000", width: 2 };
+          markerInnerSeparator = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+          markerInnerSeparator.setAttributeNS(null, 'cx', territory.x);
+          markerInnerSeparator.setAttributeNS(null, 'cy', territory.y);
+          markerInnerSeparator.setAttributeNS(null, 'fill', 'none');
+          markerInnerSeparator.setAttributeNS(
+            null,
+            'stroke',
+            sep && sep.color ? String(sep.color) : '#000000'
+          );
+          markerInnerSeparator.setAttributeNS(
+            null,
+            'stroke-width',
+            String(sep && Number.isFinite(Number(sep.width)) ? Number(sep.width) : 2)
+          );
+          markerInnerSeparator.setAttributeNS(null, 'data-label', label);
+          markerInnerSeparator.setAttributeNS(null, 'aria-hidden', 'true');
+          markerInnerSeparator.style.pointerEvents = 'none';
         }
         let fillGeom = null;
         if (playerName) {
@@ -1590,8 +1646,7 @@ window.gameUtils = {
           troopFill.setAttributeNS(null, 'cx', territory.x);
           troopFill.setAttributeNS(null, 'cy', territory.y);
           troopFill.setAttributeNS(null, 'r', String(innerR));
-          /* Black player: dark grey fluid on black vessel; ring stays colorMap black (#333). */
-          const troopFluidFill = ownerColorKey === 'black' ? '#505050' : color;
+          const troopFluidFill = color;
           troopFill.setAttributeNS(null, 'fill', troopFluidFill);
           troopFill.setAttributeNS(null, 'class', 'territory-troop-fill');
           troopFill.setAttributeNS(null, 'data-label', label);
@@ -1661,6 +1716,13 @@ window.gameUtils = {
           if (markerOutline) {
             markerOutline.setAttributeNS(null, 'r', popIn ? '0' : String(markerOutlineRadiusFor(displayBaseR)));
           }
+          if (markerInnerSeparator) {
+            markerInnerSeparator.setAttributeNS(
+              null,
+              'r',
+              popIn ? '0' : String(markerInnerSeparatorRadiusFor(displayBaseR))
+            );
+          }
           const bumpMgmRadii = () => {
             const hitR = displayBaseR + 5;
             circle.setAttributeNS(null, 'r', String(hitR));
@@ -1668,12 +1730,26 @@ window.gameUtils = {
             if (markerOutline) {
               markerOutline.setAttributeNS(null, 'r', String(markerOutlineRadiusFor(hitR * MGM_SELECT_R_MULT)));
             }
+            if (markerInnerSeparator) {
+              markerInnerSeparator.setAttributeNS(
+                null,
+                'r',
+                String(markerInnerSeparatorRadiusFor(hitR * MGM_SELECT_R_MULT))
+              );
+            }
           };
           const resetMgmRadii = () => {
             circle.setAttributeNS(null, 'r', String(displayBaseR));
             mgmVis.setAttributeNS(null, 'r', String(visR));
             if (markerOutline) {
               markerOutline.setAttributeNS(null, 'r', String(markerOutlineRadiusFor(visR)));
+            }
+            if (markerInnerSeparator) {
+              markerInnerSeparator.setAttributeNS(
+                null,
+                'r',
+                String(markerInnerSeparatorRadiusFor(visR))
+              );
             }
           };
           const onHoverEnter = () => {
@@ -1696,13 +1772,34 @@ window.gameUtils = {
           if (markerOutline) {
             markerOutline.setAttributeNS(null, 'r', popIn ? '0' : String(markerOutlineRadiusFor(displayBaseR)));
           }
+          if (markerInnerSeparator) {
+            markerInnerSeparator.setAttributeNS(
+              null,
+              'r',
+              popIn ? '0' : String(markerInnerSeparatorRadiusFor(displayBaseR))
+            );
+          }
           const bumpBaseRadii = () => {
             circle.setAttributeNS(null, 'r', displayBaseR + 5);
             if (markerOutline) markerOutline.setAttributeNS(null, 'r', String(markerOutlineRadiusFor(displayBaseR + 5)));
+            if (markerInnerSeparator) {
+              markerInnerSeparator.setAttributeNS(
+                null,
+                'r',
+                String(markerInnerSeparatorRadiusFor(displayBaseR + 5))
+              );
+            }
           };
           const resetBaseRadii = () => {
             circle.setAttributeNS(null, 'r', String(displayBaseR));
             if (markerOutline) markerOutline.setAttributeNS(null, 'r', String(markerOutlineRadiusFor(displayBaseR)));
+            if (markerInnerSeparator) {
+              markerInnerSeparator.setAttributeNS(
+                null,
+                'r',
+                String(markerInnerSeparatorRadiusFor(displayBaseR))
+              );
+            }
           };
           const onHoverEnter = () => {
             hoverDepth += 1;
@@ -1723,6 +1820,7 @@ window.gameUtils = {
         if (mgmVis) svg.appendChild(mgmVis);
         if (troopFillClip) svg.appendChild(troopFillClip);
         svg.appendChild(circle);
+        if (markerInnerSeparator) svg.appendChild(markerInnerSeparator);
         if (troopFill) svg.appendChild(troopFill);
         if (troopNotchGroup) svg.appendChild(troopNotchGroup);
         svg.appendChild(number);
@@ -1732,6 +1830,13 @@ window.gameUtils = {
             requestAnimationFrame(function () {
               mgmVis.setAttributeNS(null, 'r', String(visTargetR));
               if (markerOutline) markerOutline.setAttributeNS(null, 'r', String(markerOutlineRadiusFor(visTargetR)));
+              if (markerInnerSeparator) {
+                markerInnerSeparator.setAttributeNS(
+                  null,
+                  'r',
+                  String(markerInnerSeparatorRadiusFor(visTargetR))
+                );
+              }
             });
           });
         }
@@ -1744,6 +1849,13 @@ window.gameUtils = {
             requestAnimationFrame(function () {
               circle.setAttributeNS(null, 'r', String(displayBaseR));
               if (markerOutline) markerOutline.setAttributeNS(null, 'r', String(markerOutlineRadiusFor(displayBaseR)));
+              if (markerInnerSeparator) {
+                markerInnerSeparator.setAttributeNS(
+                  null,
+                  'r',
+                  String(markerInnerSeparatorRadiusFor(displayBaseR))
+                );
+              }
               number.style.opacity = '1';
             });
           });
@@ -1985,7 +2097,10 @@ window.gameUtils = {
           cellRect.setAttribute('y', currentY);
           cellRect.setAttribute('width', columnWidths[colIndex]);
           cellRect.setAttribute('height', rowHeightToUse);
-          cellRect.setAttribute('fill', isPlayerRow && player ? (this.colorMap[player.color] || '#808080') : 'transparent');
+          cellRect.setAttribute(
+            'fill',
+            isPlayerRow && player ? this.statsPanelPlayerBgHex(player.color) : 'transparent'
+          );
           cellRect.setAttribute('stroke', isCurrentPlayer ? '#ffffff' : '#000000');
           cellRect.setAttribute('stroke-width', isCurrentPlayer ? '3' : borderWidth);
           cellRect.style.opacity = isPlayerRow && !isCurrentPlayer ? '0.5' : '1';
@@ -1996,7 +2111,7 @@ window.gameUtils = {
             text.setAttribute('y', currentY + rowHeightToUse / 2);
             let fill = '#000000';
             if (isRoundsRow) fill = '#00ff00';
-            else if (isPlayerRow && player && ['blue', 'red', 'green', 'black'].includes(player.color)) fill = '#ffffff';
+            else if (isPlayerRow && player && this.statsPanelPlayerUseLightText(player.color)) fill = '#ffffff';
             text.setAttribute('fill', fill);
             text.setAttribute('font-family', 'Arial, sans-serif');
             text.setAttribute('font-size', fontSize);
@@ -2089,9 +2204,9 @@ window.gameUtils = {
             const t = cell != null && cell !== '' ? String(cell) : '';
             cellEl.textContent = t;
             if (isPlayerRow && player) {
-              cellEl.style.background = this.colorMap[player.color] || '#808080';
+              cellEl.style.background = this.statsPanelPlayerBgHex(player.color);
               cellEl.classList.add(
-                ['blue', 'red', 'green', 'black'].includes(player.color)
+                this.statsPanelPlayerUseLightText(player.color)
                   ? 'hud-stats-player-cell--on-dark'
                   : 'hud-stats-player-cell--on-light'
               );
@@ -2506,3 +2621,4 @@ if (window.gameUtils && typeof window.gameUtils.installNumericInputClearOnFocus 
 if (!window.RISQUE_MOCK_MAKER) {
   window.gameUtils.init();
 }
+

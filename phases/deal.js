@@ -146,6 +146,9 @@
       } catch (e2) {
         logLines("Save error: " + e2.message, logFn);
       }
+      if (typeof window.risqueMirrorPushGameState === "function") {
+        window.risqueMirrorPushGameState();
+      }
       logLines("Deal complete → deploy-order selection", logFn);
       if (window.risqueRuntimeHud && typeof window.risqueRuntimeHud.setControlVoiceText === "function") {
         window.risqueRuntimeHud.setControlVoiceText("DEAL COMPLETE — NEXT: DEPLOY ORDER", "");
@@ -186,13 +189,14 @@
       window.gameUtils.resizeCanvas();
       /* TV mirror: one-shot territory id so public board can use the same popIn grow as host (see game-shell). */
       gameState.risquePublicDealPopTerritory = territory;
+      if (typeof window.risqueMirrorPushGameState === "function") {
+        window.risqueMirrorPushGameState();
+      }
       if (window.risqueRuntimeHud && typeof window.risqueRuntimeHud.setControlVoiceText === "function") {
         window.risqueRuntimeHud.setControlVoiceText(
           "DEALING CARDS NOW — " + territories.length + " TERRITORIES LEFT",
           ""
         );
-      } else if (typeof window.risqueMirrorPushGameState === "function") {
-        window.risqueMirrorPushGameState();
       }
       try {
         delete gameState.risquePublicDealPopTerritory;

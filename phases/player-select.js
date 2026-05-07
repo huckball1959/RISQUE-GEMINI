@@ -67,12 +67,15 @@
   }
 
   function colorHex(colorName) {
+    if (typeof window.risqueColorHex === "function") {
+      return window.risqueColorHex(colorName);
+    }
     var colors = {
       blue: "#87bfff",
       red: "#ff0000",
-      green: "#008000",
+      green: "#8fd8a8",
       yellow: "#ffff00",
-      black: "#333333",
+      white: "#f8fafc",
       pink: "#ff69b4"
     };
     return colors[colorName] || "#ffffff";

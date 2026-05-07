@@ -2,7 +2,6 @@
  * Loopback disk API client (http://127.0.0.1:5599 by default). Loaded by game.html so file:// host can
  * write SAVE without File System Access. scripts/RISQUE.ps1 starts scripts/risque-disk-server.ps1 in
  * the background before Chromium; risque-launcher-paths.json includes diskApiBase (override via env RISQUE_DISK_PORT).
- * Python scripts/risque-disk-server.py is an alternate implementation with the same routes.
  */
 (function () {
   "use strict";

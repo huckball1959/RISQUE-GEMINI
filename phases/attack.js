@@ -78,6 +78,15 @@ function risqueStartPostTransferDestinationPulse(destLabel, fromTroops, toTroops
     window.gameUtils.risqueStartTransferPulseTicker();
   }
 }
+
+function risqueTransferPulseEnabledForCurrentMode(opts) {
+  opts = opts && typeof opts === 'object' ? opts : {};
+  if (opts.disableTransferPulse) return false;
+  /* Keep transfer instant in Blitz Instant and Campaign Instant modes. */
+  if (window.gameState && window.gameState.risqueInstantBlitzTransferUi) return false;
+  if (campaignMode === 'path' && campaignType === 'instant') return false;
+  return true;
+}
 let isAcquiring = false;
 let troopsToTransfer = 0;
 let minTroopsToTransfer = 0;
@@ -1751,7 +1760,11 @@ function autoCompleteTroopTransferLeaveBehind(leaveBehind, opts) {
     out.campaignHalted = true;
   }
 
-  risqueStartPostTransferDestinationPulse(acquired.name, minT, totalToDest);
+  if (risqueTransferPulseEnabledForCurrentMode(opts)) {
+    risqueStartPostTransferDestinationPulse(acquired.name, minT, totalToDest);
+  } else if (window.gameState && window.gameState.risqueTransferPulse) {
+    delete window.gameState.risqueTransferPulse;
+  }
   prependCombatLog(
     `${player.name} moves ${totalToDest} troops into ${prettyTerritoryName(acquired.name)} (leave ${attacking.troops} on ${prettyTerritoryName(attacking.name)}).`,
     'battle'
@@ -1997,7 +2010,11 @@ function applyBattleRoundAfterRoll(snap, opts) {
         hopIdx === pathLen - 2;
       const transferRes = autoCompleteTroopTransferLeaveBehind(
         opts.campaignLeaveBehind != null ? opts.campaignLeaveBehind : campaignPreferredGarrison,
-        { campaignAutoTransfer: true, isLastCampaignHop }
+        {
+          campaignAutoTransfer: true,
+          isLastCampaignHop,
+          disableTransferPulse: campaignType === 'instant'
+        }
       );
       isAcquiring = false;
       saveGameState();
@@ -2802,7 +2819,11 @@ function initTroopTransfer() {
         attacking.troops = attackerInitialTroops - minTroopsToTransfer - additional;
         acquired.troops = toPulse;
         const totalToDest = toPulse;
-        risqueStartPostTransferDestinationPulse(acquired.name, fromPulse, toPulse);
+        if (risqueTransferPulseEnabledForCurrentMode({})) {
+          risqueStartPostTransferDestinationPulse(acquired.name, fromPulse, toPulse);
+        } else if (window.gameState && window.gameState.risqueTransferPulse) {
+          delete window.gameState.risqueTransferPulse;
+        }
         transferCompleted = true;
         window.gameState.attackPhase = 'attack';
         window.gameState.attackingTerritory = null;

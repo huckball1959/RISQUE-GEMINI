@@ -57,12 +57,12 @@
       "#risque-login-overlay .color-swatch{width:44px;height:44px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;line-height:1.05;color:#fff;text-align:center;cursor:pointer;pointer-events:auto;border:none;border-radius:2px;padding:2px;box-sizing:border-box;}" +
       "#risque-login-overlay .color-swatch.active{filter:brightness(1.18);transform:scale(1.06);}" +
       "#risque-login-overlay .color-swatch.unavailable{opacity:0.3;cursor:default;pointer-events:none;}" +
-      "#risque-login-overlay .color-swatch.blue{background:#87bfff;}" +
-      "#risque-login-overlay .color-swatch.red{background:#ff0000;}" +
-      "#risque-login-overlay .color-swatch.green{background:#008000;}" +
-      "#risque-login-overlay .color-swatch.yellow{background:#ffff00;color:#000;}" +
-      "#risque-login-overlay .color-swatch.black{background:#000000;color:#fff;border:1px solid #00ff00;}" +
-      "#risque-login-overlay .color-swatch.pink{background:#ff69b4;color:#000;}" +
+      "#risque-login-overlay .color-swatch.blue{background:var(--risque-color-blue,#87bfff);}" +
+      "#risque-login-overlay .color-swatch.red{background:var(--risque-color-red,#ff0000);}" +
+      "#risque-login-overlay .color-swatch.green{background:var(--risque-color-green,#8fd8a8);color:#000;}" +
+      "#risque-login-overlay .color-swatch.yellow{background:var(--risque-color-yellow,#ffff00);color:#000;}" +
+      "#risque-login-overlay .color-swatch.white{background:var(--risque-color-white,#f8fafc);color:#111827;border:1px solid #94a3b8;}" +
+      "#risque-login-overlay .color-swatch.pink{background:var(--risque-color-pink,#ff69b4);color:#000;}" +
       "#risque-login-overlay .player-row{display:flex;align-items:center;margin-bottom:10px;}" +
       "#risque-login-overlay .player-row label{width:104px;color:#00ff00;font-size:16px;margin-right:10px;flex-shrink:0;font-weight:800;text-transform:uppercase;letter-spacing:.04em;text-align:center;white-space:nowrap;box-sizing:border-box;}" +
       "#risque-login-overlay .player-row input{flex:1;box-sizing:border-box;min-height:44px;height:44px;padding:2px 8px;font-size:22px;font-weight:800;line-height:1.05;letter-spacing:0.04em;text-transform:uppercase;border:1px solid #00ff00;border-radius:4px;background:#000000;color:#00ff00;caret-color:#00ff00;pointer-events:auto;min-width:0;}" +
@@ -176,7 +176,22 @@
     };
   }
 
-  var DEFAULT_IMPORT_PLAYER_COLORS = ["blue", "red", "yellow", "green", "pink", "black"];
+  /** Host may toggle replay disk save off on the login shell; carry that into the new session roster. */
+  function copyHostPreflightReplaySaveFlagIntoNewGame(newGs) {
+    try {
+      var prev = window.gameState;
+      if (prev && typeof prev === "object" && prev.risqueReplayDiskSaveDisabled === true) {
+        newGs.risqueReplayDiskSaveDisabled = true;
+      }
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
+  var DEFAULT_IMPORT_PLAYER_COLORS =
+    window.risquePlayerColors && Array.isArray(window.risquePlayerColors.order)
+      ? window.risquePlayerColors.order.slice()
+      : ["blue", "red", "yellow", "green", "pink", "white"];
 
   /**
    * Raw JSON may be wrapped ({ gameState: {...} }) or omit player.color / use a non-array territories.
@@ -528,7 +543,7 @@
       { name: "Ivy", color: "blue" },
       { name: "Jay", color: "red" },
       { name: "Kim", color: "pink" },
-      { name: "Lee", color: "black" }
+      { name: "Lee", color: "white" }
     ],
     [
       { name: "Mo", color: "blue" },
@@ -542,7 +557,7 @@
       { name: "Sid", color: "yellow" },
       { name: "Tom", color: "green" },
       { name: "Uma", color: "pink" },
-      { name: "Vic", color: "black" }
+      { name: "Vic", color: "white" }
     ]
   ];
 
@@ -800,7 +815,7 @@
       "<div class=\"color-swatch yellow active\" data-color=\"yellow\">Yl</div>" +
       "<div class=\"color-swatch green active\" data-color=\"green\">Gr</div>" +
       "<div class=\"color-swatch pink active\" data-color=\"pink\">Pk</div>" +
-      "<div class=\"color-swatch black active\" data-color=\"black\">Bk</div>" +
+      "<div class=\"color-swatch white active\" data-color=\"white\">Wh</div>" +
       "</div>" +
       "<div id=\"player-form-js\">" + buildPlayerFormHtml() + "</div>" +
       "<div id=\"login-js-error-hud\"></div>" +
@@ -972,6 +987,7 @@
         }
         pushPublicLoginFadeStartForMirror();
         var gs = buildGameStateFromRows(filled);
+        copyHostPreflightReplaySaveFlagIntoNewGame(gs);
         if (typeof window.risqueReplayClearTapeSidecar === "function") {
           window.risqueReplayClearTapeSidecar();
         }
@@ -1069,7 +1085,7 @@
       '<div class="color-swatch yellow active" data-color="yellow">Yellow</div>' +
       '<div class="color-swatch green active" data-color="green">Green</div>' +
       '<div class="color-swatch pink active" data-color="pink">Pink</div>' +
-      '<div class="color-swatch black active" data-color="black">Black</div>' +
+      '<div class="color-swatch white active" data-color="white">White</div>' +
       "</div>" +
       '<div id="player-form-js">' +
       buildPlayerFormHtml() +
@@ -1236,6 +1252,7 @@
         return;
       }
       var gs = buildGameStateFromRows(filled);
+      copyHostPreflightReplaySaveFlagIntoNewGame(gs);
       if (typeof window.risqueReplayClearTapeSidecar === "function") {
         window.risqueReplayClearTapeSidecar();
       }
@@ -1304,8 +1321,18 @@
           if (typeof window.risqueReplayClearTapeSidecar === "function") {
             window.risqueReplayClearTapeSidecar();
           }
+          if (!skipPersist && typeof window.risqueClearStoredSessionForNewGame === "function") {
+            window.risqueClearStoredSessionForNewGame();
+          }
           if (!skipPersist) {
             localStorage.setItem("gameState", JSON.stringify(gs));
+          }
+          if (!skipPersist && typeof window.risqueHostReplaceShellGameState === "function") {
+            try {
+              window.risqueHostReplaceShellGameState(gs);
+            } catch (eRep1) {
+              /* ignore */
+            }
           }
           onLog("Loaded (embedded), handing off to onLoadSuccess");
           if (typeof onLoadSuccess === "function") {
@@ -1373,7 +1400,7 @@
       "<div class=\"color-swatch yellow active\" data-color=\"yellow\">Yellow</div>" +
       "<div class=\"color-swatch green active\" data-color=\"green\">Green</div>" +
       "<div class=\"color-swatch pink active\" data-color=\"pink\">Pink</div>" +
-      "<div class=\"color-swatch black active\" data-color=\"black\">Black</div>" +
+      "<div class=\"color-swatch white active\" data-color=\"white\">White</div>" +
       "</div>" +
       "<div id=\"player-form-js\">" + buildPlayerFormHtml() + "</div>" +
       "<div class=\"login-docs-row\">" +
@@ -1397,7 +1424,7 @@
       if (window.location.protocol === "file:") {
         easyHint.hidden = false;
         easyHint.textContent =
-          "Tip: open via scripts\\RISQUE.bat or localhost so rounds can autosave to one folder (file:// limits folder access).";
+          "Tip: open via RISQUE.bat (repo folder) or localhost so rounds can autosave to one folder (file:// limits folder access).";
       } else if (typeof window.risqueFetchLauncherPathsJson === "function") {
         window.risqueFetchLauncherPathsJson().then(function (j) {
           if (!easyHint || !easyHint.isConnected) return;
@@ -1568,6 +1595,7 @@
       }
       pushPublicLoginFadeStartForMirror();
       var gs = buildGameStateFromRows(filled);
+      copyHostPreflightReplaySaveFlagIntoNewGame(gs);
       if (typeof window.risqueReplayClearTapeSidecar === "function") {
         window.risqueReplayClearTapeSidecar();
       }
@@ -1653,8 +1681,18 @@
           if (typeof window.risqueReplayClearTapeSidecar === "function") {
             window.risqueReplayClearTapeSidecar();
           }
+          if (!skipPersist && typeof window.risqueClearStoredSessionForNewGame === "function") {
+            window.risqueClearStoredSessionForNewGame();
+          }
           if (!skipPersist) {
             localStorage.setItem("gameState", JSON.stringify(gs));
+          }
+          if (!skipPersist && typeof window.risqueHostReplaceShellGameState === "function") {
+            try {
+              window.risqueHostReplaceShellGameState(gs);
+            } catch (eRep2) {
+              /* ignore */
+            }
           }
           onLog("Loaded, redirecting to " + loadRedirect);
           welcomeText.classList.add("fade-out");
@@ -1709,3 +1747,7 @@
     fixResumePhase: fixResumePhase
   };
 })();
+
+
+
+

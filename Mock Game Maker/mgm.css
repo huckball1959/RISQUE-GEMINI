@@ -353,30 +353,30 @@ body {
 }
 
 #risque-login-embedded-root .color-swatch.blue {
-  background: #87bfff;
+  background: var(--risque-color-blue, #87bfff);
 }
 
 #risque-login-embedded-root .color-swatch.red {
-  background: #ff0000;
+  background: var(--risque-color-red, #ff0000);
 }
 
 #risque-login-embedded-root .color-swatch.green {
-  background: #008000;
+  background: var(--risque-color-green, #8fd8a8);
 }
 
 #risque-login-embedded-root .color-swatch.yellow {
-  background: #ffff00;
+  background: var(--risque-color-yellow, #ffff00);
   color: #000;
 }
 
-#risque-login-embedded-root .color-swatch.black {
-  background: #000;
-  color: #fff;
-  border: 2px solid #f1f5f9;
+#risque-login-embedded-root .color-swatch.white {
+  background: var(--risque-color-white, #f8fafc);
+  color: #111827;
+  border: 2px solid #94a3b8;
 }
 
 #risque-login-embedded-root .color-swatch.pink {
-  background: #ff69b4;
+  background: var(--risque-color-pink, #ff69b4);
   color: #000;
 }
 
@@ -1278,3 +1278,5 @@ body {
   font-size: 12px;
   max-width: 100%;
 }
+
+

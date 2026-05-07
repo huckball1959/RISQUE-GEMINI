@@ -41,7 +41,7 @@
   </script>
   <script>
     (function () {
-      /* scripts\\RISQUE.bat (local): URLs carry replayDebug=1 so REPLAY / merge logs work with zero setup. */
+      /* RISQUE.bat local launch: URLs carry replayDebug=1 so REPLAY / merge logs work with zero setup. */
       try {
         var rd = new URL(window.location.href).searchParams.get("replayDebug");
         if (rd === "1") {
@@ -63,7 +63,7 @@
       background-color: #000;
     }
   </style>
-  <link rel="stylesheet" href="game.css?v=attack-guidance-dim-disabled-controls-2026-05-06" />
+  <link rel="stylesheet" href="game.css?v=white-player-black-marker-center-white-2026-05-07g" />
   <script>
     (function () {
       try {
@@ -446,22 +446,23 @@
     })();
   </script>
 
-  <script src="js/core.js?v=replay-warpath-fallback-guard-2026-05-06"></script>
-  <script src="js/replay-tape.js?v=round-replay-attack-tail-2026-05-01"></script>
+  <script src="js/risque-colors.js?v=marker-inner-separator-revert-white-2026-05-07i"></script>
+  <script src="js/replay-tape.js?v=lean-ls-gamestate-default-2026-05-06"></script>
+  <script src="js/core.js?v=marker-numbers-white-stroke-2026-05-07j"></script>
   <script src="js/risque-session-disk.js?v=game-win-replay-flush-2026-05-06"></script>
   <script src="js/risque-session-staging.js?v=staging-disk-opt-in-2026-04-29"></script>
   <script src="js/risque-external-urls.js"></script>
   <script src="js/risque-local-disk.js?v=launcher-disk-api-2026-05-01"></script>
-  <script src="phases/login.js?v=pastel-blue-player-2026-05-06"></script>
+  <script src="phases/login.js?v=load-game-replace-live-state-2026-05-07m"></script>
   <script src="phases/privacy-gate.js?v=privacy-continue-quota-2026-05-01"></script>
-  <script src="phases/player-select.js?v=pastel-blue-player-2026-05-06"></script>
-  <script src="phases/deal.js"></script>
+  <script src="phases/player-select.js?v=centralized-color-registry-2026-05-07f"></script>
+  <script src="phases/deal.js?v=public-mirror-every-deal-step-2026-05-06"></script>
   <script src="phases/deploy.js?v=deploy-clear-std-income-meta-2026-04-27e"></script>
   <script src="phases/conquer.js?v=conquer-mirror-order-2026-04-14"></script>
-  <script src="phases/attack.js?v=attack-guidance-dim-disabled-controls-2026-05-06"></script>
+  <script src="phases/attack.js?v=instant-transfer-no-rollup-blitz-campaign-2026-05-07k"></script>
   <script src="phases/runtime-hud.js?v=grace-three-options-2026-05-06"></script>
   <script src="js/post-cardplay-navigator.js"></script>
-  <script src="phases/cardplay.js?v=aerial-buttons-hidden-until-public-top-2026-05-06"></script>
+  <script src="phases/cardplay.js?v=gate-process-valid-book-2026-05-06"></script>
   <script src="phases/income.js?v=income-std-income-continent-meta-2026-04-27e"></script>
   <script src="phases/con-income-phase.js?v=con-income-player-casefix-2026-04-27e"></script>
   <script src="phases/attack-phase.js?v=capture-attack-entry-continents-2026-04-26"></script>
@@ -471,6 +472,7 @@
   <script src="phases/postgame.js?v=flat-archive-msg-2026-05-02"></script>
   <script src="phases/conquer-phase.js?v=game-win-replay-flush-2026-05-06"></script>
   <script src="js/risque-save-folder-idb.js?v=autosave-folder-2026-04-30"></script>
-  <script src="js/game-shell.js?v=aerial-confirm-gate-after-public-display-2026-05-06"></script>
+  <script src="js/game-shell.js?v=corner-load-clear-and-normalize-2026-05-07m"></script>
 </body>
 </html>
+

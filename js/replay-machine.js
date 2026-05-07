@@ -57,6 +57,22 @@
   var AUTO_START_PLAYBACK_AFTER_LOAD = false;
   var AUTO_START_DELAY_MS = 320;
 
+  /** When replay-machine opens with ?replayAutoplay=1 (e.g. postgame), begin playback once after pack load. */
+  function scheduleReplayAutoplayFromUrlOnce() {
+    if (window.__risqueReplayAutoplayScheduled) return;
+    var ap = false;
+    try {
+      ap = new URLSearchParams(window.location.search).get("replayAutoplay") === "1";
+    } catch (eAu0) {
+      ap = false;
+    }
+    if (!ap) return;
+    window.__risqueReplayAutoplayScheduled = true;
+    window.setTimeout(function () {
+      startPlaybackFromLoadedPack();
+    }, AUTO_START_DELAY_MS);
+  }
+
   function tapeVersionOk(v) {
     var n = typeof v === "number" ? v : parseInt(v, 10);
     return n === 1 || n === TAPE_VERSION;
@@ -1773,6 +1789,7 @@
       updateTransportPlayPauseUi(null);
       updateRoundsLoadedUi(sourcePacks || [pack], pack);
       clearReplayChipHighlight();
+      scheduleReplayAutoplayFromUrlOnce();
     } catch (e) {
       setStatus("Replay error: " + (e && e.message ? e.message : String(e)));
       try {

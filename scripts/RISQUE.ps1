@@ -13,7 +13,7 @@
 
   Local clone uses file:// for pages; a separate minimal HTTP listener on localhost is used only for save/replay JSON (not for serving the game).
 
-  Double-click: scripts\RISQUE.bat
+  Double-click: RISQUE.bat in repo root — runs this script.
 
 .PARAMETER SkipMenu
   Do not show the menu; launch local unless -Hosted / -File.
@@ -39,6 +39,9 @@
 .PARAMETER NoReplayDebug
     Local file:// only: do not append replayDebug=1 (skips console [ReplayDebug] tape logging). Default is ON for local launches so scripts\RISQUE.bat needs no extra clicks.
 
+.PARAMETER PrepareEnvOnly
+    Local or hosted: ensure save folder, disk helper (local only), and risque-launcher-paths.json — then exit without opening a browser. For perf/automation (e.g. Playwright) that loads file:// or http pages itself.
+
 .NOTES
   Dual-monitor Chromium uses a temp user-data-dir, download directory forced to the save root via Preferences.
   Env RISQUE_BROWSER = auto | chrome | edge (default auto). Local disk URLs use file:///C:/path/... shape.
@@ -51,10 +54,15 @@ param(
     [switch]$File,
     [switch]$SingleWindow,
     [switch]$NoEmergencyWatcher,
-    [switch]$NoReplayDebug
+    [switch]$NoReplayDebug,
+    [switch]$PrepareEnvOnly
 )
 
 $ErrorActionPreference = "Stop"
+
+if ($PrepareEnvOnly) {
+    $SkipMenu = $true
+}
 
 $DefaultHostedUrl = "https://huckball1959.github.io/RISQUE-GEMINI/game.html?phase=login&loginLegacyNext=game.html%3Fphase%3DplayerSelect%26selectKind%3DfirstCard&loginLoadRedirect=game.html%3Fphase%3Dcardplay%26legacyNext%3Dincome.html"
 
@@ -496,6 +504,21 @@ if ($Hosted) {
 else {
     $diskApiBaseForJson = Start-RisqueLocalDiskApi -SaveRootPath $SaveRoot -Port $diskPort
     Write-RisqueLauncherPaths -GameDir $RepoRoot -DiskApiBase $diskApiBaseForJson
+}
+
+if ($PrepareEnvOnly) {
+    if (-not $Hosted) {
+        $indexLocalCheck = Join-Path $RepoRoot "index.html"
+        if (-not (Test-Path -LiteralPath $indexLocalCheck)) {
+            Write-Host "ERROR: index.html not found in repo root: $RepoRoot" -ForegroundColor Red
+            exit 1
+        }
+    }
+    Write-Host ""
+    Write-Host "PrepareEnvOnly: save root + launcher paths ready (no browser launched)." -ForegroundColor Green
+    Write-Host "  Repo: $RepoRoot"
+    Write-Host "  Save: $SaveRoot"
+    exit 0
 }
 
 $indexLocal = Join-Path $RepoRoot "index.html"

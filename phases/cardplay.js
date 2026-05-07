@@ -1733,6 +1733,7 @@
             ' card" draggable="false">';
         });
         stagingGrid.innerHTML = stHtml;
+        wireCardplayCardClicks(stagingGrid);
       }
       if (stagingWrap && isCardplayHudCompact()) {
         const showStaging =
@@ -1771,11 +1772,22 @@
         if (n === 0) {
           noCardsMessage.textContent = "Select the first of 3 cards for a valid book.";
         } else if (n === 1) {
-          noCardsMessage.textContent = "Select the second of 3 cards for a valid book.";
+          noCardsMessage.textContent =
+            "Select the second of 3 — or tap your pick below to send it back up.";
         } else if (n === 2) {
-          noCardsMessage.textContent = "Select the third of 3 cards for a valid book.";
+          noCardsMessage.textContent =
+            "Select the third of 3 — or tap any card below to send that one back up.";
         } else {
-          noCardsMessage.textContent = "Valid book ready below — PROCESS to play it or RST to re-pick.";
+          var names3 = selectedCards.map(function (sc) {
+            return sc.card;
+          });
+          if (validateBook(names3)) {
+            noCardsMessage.textContent =
+              "Valid book below — PROCESS to play, RST clears all, or tap any card below to return just that one.";
+          } else {
+            noCardsMessage.textContent =
+              "Not a valid book — tap a card below to return one and swap a pick, or RST.";
+          }
         }
         return;
       }
@@ -1783,7 +1795,8 @@
         if (selectedCards.length === 0) {
           noCardsMessage.textContent = "Select a card to play.";
         } else {
-          noCardsMessage.textContent = "Card below — PROCESS to play, or RST to put it back.";
+          noCardsMessage.textContent =
+            "Card below — PROCESS to play, RST to clear, or tap the card below to return it.";
         }
         return;
       }
@@ -1878,7 +1891,24 @@
       }
       if (isCardplayHudCompact()) {
         const st = document.getElementById("cardplay-staging-grid");
+        /* Lower strip: same handler for BOOK (1–3 picks) and CARD (1 pick) — removes one staged ref by id. */
         if (st && img.closest && img.closest("#cardplay-staging-grid")) {
+          if (processingBook) return;
+          if (img.classList.contains("played")) return;
+          const sid = img.dataset.id;
+          var removedStaging = false;
+          selectedCards = selectedCards.filter(function (c) {
+            if (c && String(c.id) === String(sid)) {
+              removedStaging = true;
+              return false;
+            }
+            return true;
+          });
+          if (!removedStaging) return;
+          setCardplayError("");
+          rebuildCardplayHandAndStaging();
+          refreshCardplayHudHint();
+          checkCardStatus();
           return;
         }
         if (!isBookSelectionMode && !isIndividualSelectionMode) {
@@ -1981,9 +2011,7 @@
       }
       const cardNames = selectedCards.map(sc => sc.card);
       if (!validateBook(cardNames)) {
-        setCardplayError(
-          "Warning: Not a valid set. You need 3 matching unit types (infantry, cavalry, or artillery), or one of each type. Wildcards count as any."
-        );
+        setCardplayError(CARDPLAY_INVALID_BOOK_MSG);
         isBookSelectionMode = true;
         if (isCardplayHudCompact()) {
           rebuildCardplayHandAndStaging();
@@ -2586,6 +2614,9 @@
         checkCardStatus();
       }
     }
+    var CARDPLAY_INVALID_BOOK_MSG =
+      "Warning: Not a valid set. You need 3 matching unit types (infantry, cavalry, or artillery), or one of each type. Wildcards count as any.";
+
     function validateBook(cards) {
       if (!cards || cards.length !== 3) return false;
       const ids = cards
@@ -2683,7 +2714,9 @@
           var nextOkC = false;
           if (!holdConfirm) {
             if (inBook && staging === 3) {
-              nextOkC = true;
+              nextOkC = validateBook(selectedCards.map(function (sc) {
+                return sc.card;
+              }));
             } else if (inInd && staging === 1) {
               nextOkC = true;
             } else if (!inBook && !inInd) {
@@ -2721,6 +2754,33 @@
         var barLbl = cardplayCompactPrimaryBarLabel();
         if (nextPhaseButton) nextPhaseButton.textContent = barLbl;
         if (panelConfirmBtn) panelConfirmBtn.textContent = barLbl;
+      }
+      if (useCompact && inBook) {
+        var stgBook = selectedCards.length;
+        if (stgBook === 3) {
+          var bookNamesCheck = selectedCards.map(function (sc) {
+            return sc.card;
+          });
+          if (!validateBook(bookNamesCheck)) {
+            setCardplayError(CARDPLAY_INVALID_BOOK_MSG);
+          } else {
+            var errStripOk = cardplayStatusEl();
+            if (
+              errStripOk &&
+              /not a valid set|invalid book/i.test(String(errStripOk.textContent || ""))
+            ) {
+              setCardplayError("");
+            }
+          }
+        } else {
+          var errStripEarly = cardplayStatusEl();
+          if (
+            errStripEarly &&
+            /not a valid set|invalid book/i.test(String(errStripEarly.textContent || ""))
+          ) {
+            setCardplayError("");
+          }
+        }
       }
       var skipIncBtn = document.getElementById("cardplay-skip-income-btn");
       if (skipIncBtn) {

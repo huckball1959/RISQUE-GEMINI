@@ -394,7 +394,7 @@
     typeof window.risqueLoginRecoveryUrl === "function"
       ? window.risqueLoginRecoveryUrl()
       : "game.html?phase=login&loginLegacyNext=game.html%3Fphase%3DplayerSelect%26selectKind%3DfirstCard&loginLoadRedirect=game.html%3Fphase%3Dcardplay%26legacyNext%3Dincome.html";
-  var BOARD_CORNER_TOOLS_VERSION = "22";
+  var BOARD_CORNER_TOOLS_VERSION = "23";
 
   /** Monotonic per-session index for emergency saves and turn checkpoints (stored on gameState). */
   function risquePeekSimpleAutosaveSeq(gs) {
@@ -1014,8 +1014,10 @@
   /**
    * Open Wayback on a non-host monitor when possible: Window Management API (Chrome), else adjacency heuristics.
    * Flushes the latest board into the tape before opening; bootstrap uses in-memory tape + save-folder DD/rNpM when connected.
+   * @param {{ replayAutoplay?: boolean }} [opts] When replayAutoplay is true, replay-machine begins playback after load (postgame flow).
    */
-  function risqueOpenReplayMachineFromHost() {
+  function risqueOpenReplayMachineFromHost(opts) {
+    opts = opts || {};
     var base = "";
     try {
       base = risqueDoc("replayMachine");
@@ -1026,6 +1028,9 @@
       var u = new URL(base, window.location.href);
       u.searchParams.set("auto", "1");
       u.searchParams.set("bootTs", String(Date.now()));
+      if (opts.replayAutoplay) {
+        u.searchParams.set("replayAutoplay", "1");
+      }
       try {
         var rdHost = new URL(window.location.href).searchParams.get("replayDebug");
         if (rdHost === "1" || rdHost === "0") {
@@ -1271,6 +1276,8 @@
     }
     prep.then(openAfterPrep);
   }
+
+  window.risqueOpenReplayMachineFromHost = risqueOpenReplayMachineFromHost;
 
   function clearStoredSessionForNewGame() {
     try {
@@ -1623,6 +1630,51 @@
     return lite;
   }
 
+  /**
+   * Lean localStorage (default ON via `risqueLsReplayLiteEffective` in replay-tape.js): omit replay blobs from
+   * persisted gameState; live `window.gameState` still holds the tape. Opt out of lean LS: `?lsReplayLite=0`
+   * or `risqueLsReplayLite=0`. Mirror/saveState use same keys as `REPLAY_STRIP_KEYS` in replay-tape.js.
+   */
+  var RISQUE_LS_REPLAY_LITE_KEYS = [
+    "risqueReplayTape",
+    "risqueReplayTapeSessionKey",
+    "risqueReplayPlayerColors",
+    "risqueReplayByRound",
+    "risqueReplayPlaybackActive",
+    "risqueReplayHudRound",
+    "risqueReplayBattleFlashLabels",
+    "risquePublicReplayRound",
+    "risquePublicReplayEliminationSplash",
+    "phaseReplayIndex"
+  ];
+  var __risqueLoggedLsReplayLite = false;
+  function risqueLocalStorageReplayLiteEnabled() {
+    if (typeof window.risqueLsReplayLiteEffective === "function") {
+      return window.risqueLsReplayLiteEffective();
+    }
+    return false;
+  }
+  window.risqueLocalStorageReplayLiteEnabled = risqueLocalStorageReplayLiteEnabled;
+  function risqueApplyLsReplayLiteToPayload(obj) {
+    if (!obj || typeof obj !== "object") return;
+    var i;
+    for (i = 0; i < RISQUE_LS_REPLAY_LITE_KEYS.length; i += 1) {
+      delete obj[RISQUE_LS_REPLAY_LITE_KEYS[i]];
+    }
+  }
+  function risqueMaybeLogLsReplayLiteOnce() {
+    if (__risqueLoggedLsReplayLite || !risqueLocalStorageReplayLiteEnabled()) return;
+    __risqueLoggedLsReplayLite = true;
+    try {
+      console.info(
+        "[RISQUE] Lean localStorage: replay omitted from persisted gameState (default). " +
+          "Full replay stays in memory until reload; use SAVE for a file with tape. Opt out: ?lsReplayLite=0"
+      );
+    } catch (eLog) {
+      /* ignore */
+    }
+  }
+
   function risqueBuildEmergencyMirrorPayload(mirrorPayload) {
     var lite = JSON.parse(JSON.stringify(mirrorPayload || {}));
     /* TV needs map + phase sync; trim bulky recap/log payloads under quota pressure. */
@@ -1676,6 +1728,10 @@
         delete forDisk.risqueCardplaySuppressPublicSpectator;
         delete forDisk.risquePublicCardplaySpectatorHandCount;
         delete forDisk.risquePublicCardplaySpectatorPlayer;
+      }
+      if (risqueLocalStorageReplayLiteEnabled()) {
+        risqueMaybeLogLsReplayLiteOnce();
+        risqueApplyLsReplayLiteToPayload(forDisk);
       }
       var forDiskJson = JSON.stringify(forDisk);
       if (!risqueTryWriteLocalStorageWithQuotaFallback(STORAGE_KEY, forDiskJson)) {
@@ -6226,6 +6282,10 @@
     if (s.setupComplete !== true && postSetupPhases[s.phase]) {
       s.setupComplete = true;
     }
+    /* Default: no continuous DD/rNpM disk chips during play (folder stays tidy); use SAVE + REPLAY for full export. */
+    if (typeof s.risqueReplayDiskSaveDisabled !== "boolean") {
+      s.risqueReplayDiskSaveDisabled = true;
+    }
     risqueApplyHostHudStatsColumnRetiredFromPhase(s);
     return s;
   }
@@ -6568,7 +6628,15 @@
       prevState = null;
     }
     function write() {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      var payload = state;
+      if (
+        risqueLocalStorageReplayLiteEnabled() &&
+        typeof window.risqueStripReplayFromGameStateClone === "function"
+      ) {
+        payload = window.risqueStripReplayFromGameStateClone(state);
+        risqueMaybeLogLsReplayLiteOnce();
+      }
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
     }
     function notifyStaging(s) {
       try {
@@ -6977,7 +7045,7 @@
         '<p class="risque-ras-body">You opened RISQUE from local files. Autosave will export JSON backups to your browser download folder after each completed round. ' +
         "To save directly into a chosen folder, run RISQUE from localhost/https instead. " +
         "<strong>Every reload or hard refresh (Ctrl+F5)</strong> asks again for this session.</p>" +
-        '<p class="risque-ras-hint">Tip: run <code>scripts\\RISQUE.bat</code> so downloads default to <code>C:\\risque\\save</code>, then use <strong>Choose folder</strong> once for silent checkpoints.</p>' +
+        '<p class="risque-ras-hint">Tip: run <code>RISQUE.bat</code> from the repo folder so downloads default to <code>C:\\risque\\save</code>, then use <strong>Choose folder</strong> once for silent checkpoints.</p>' +
         '<div class="risque-ras-actions">' +
         '<button type="button" class="risque-ras-primary" id="risque-ras-local-continue">Continue</button>' +
         "</div>" +
@@ -8363,28 +8431,42 @@
   /**
    * Host save to disk: native Save dialog (name + folder) when showSaveFilePicker exists (e.g. localhost / https);
    * starts in Downloads when supported; otherwise prompt + download (browser default folder is usually Downloads).
+   * @param {object} gameStateObj
+   * @param {{ includeReplayInMainJson?: boolean }} [opts] — if true, one fat JSON with full tape (Wayback another day); skips strip + separate replay-N.json sidecar.
    */
-  function saveGameSnapshotToFile(gameStateObj) {
+  function saveGameSnapshotToFile(gameStateObj, opts) {
+    opts = opts || {};
+    var includeReplayInMainJson = !!opts.includeReplayInMainJson;
     var forSave = gameStateObj;
-    try {
-      if (typeof window.risqueStripReplayFromGameStateClone === "function") {
-        forSave = window.risqueStripReplayFromGameStateClone(gameStateObj);
+    if (includeReplayInMainJson) {
+      try {
+        forSave = JSON.parse(JSON.stringify(gameStateObj));
+      } catch (eFull) {
+        forSave = gameStateObj;
       }
-    } catch (eFs) {
-      forSave = gameStateObj;
+    } else {
+      try {
+        if (typeof window.risqueStripReplayFromGameStateClone === "function") {
+          forSave = window.risqueStripReplayFromGameStateClone(gameStateObj);
+        }
+      } catch (eFs) {
+        forSave = gameStateObj;
+      }
     }
     var payload = JSON.stringify(forSave, null, 2);
     var replayPack = null;
-    try {
-      replayPack =
-        typeof window.risqueBuildRoundReplayExport === "function"
-          ? window.risqueBuildRoundReplayExport(
-              gameStateObj,
-              Number(gameStateObj && gameStateObj.round) || 1
-            )
-          : null;
-    } catch (eRp) {
-      replayPack = null;
+    if (!includeReplayInMainJson) {
+      try {
+        replayPack =
+          typeof window.risqueBuildRoundReplayExport === "function"
+            ? window.risqueBuildRoundReplayExport(
+                gameStateObj,
+                Number(gameStateObj && gameStateObj.round) || 1
+              )
+            : null;
+      } catch (eRp) {
+        replayPack = null;
+      }
     }
     var defaultBase = defaultRisqueSaveBasename();
     var suggestedFile = risqueSaveBasenameForFilename(defaultBase) + ".json";
@@ -8452,7 +8534,11 @@
         });
       })
       .then(function () {
-        if (!replayPack || replayPack.format !== "risque-replay-v1") {
+        if (
+          includeReplayInMainJson ||
+          !replayPack ||
+          replayPack.format !== "risque-replay-v1"
+        ) {
           return { ok: true, usedPicker: true };
         }
         var replaySuggested = risqueRoundReplayFilename(Number(gameStateObj && gameStateObj.round) || 1);
@@ -8550,6 +8636,40 @@
         if (sourceLabel === "keyboard") {
           setBoardCornerMsg("Save failed.");
         }
+      });
+  }
+
+  /** Corner / explicit backup: one JSON file including full replay tape for load another day (larger file). */
+  function triggerHostSaveGameAndReplay(sourceLabel) {
+    if (window.risqueDisplayIsPublic) return;
+    var snap;
+    try {
+      snap = getActiveGameStateSnapshot();
+      saveState(snap);
+    } catch (eSnap) {
+      setBoardCornerMsg("Save failed.");
+      return;
+    }
+    saveGameSnapshotToFile(snap, { includeReplayInMainJson: true })
+      .then(function (res) {
+        if (!res) return;
+        if (res.aborted) {
+          setBoardCornerMsg("Save canceled.");
+        } else if (res.ok) {
+          setBoardCornerMsg(
+            res.usedPicker
+              ? "Saved game + replay (full JSON)."
+              : "Saved game + replay — check Downloads if the browser did not ask for a folder."
+          );
+        } else {
+          setBoardCornerMsg("Save failed.");
+        }
+        if (res.ok) {
+          logEvent("Save game + replay (" + sourceLabel + ")", { usedPicker: !!res.usedPicker });
+        }
+      })
+      .catch(function () {
+        setBoardCornerMsg("Save failed.");
       });
   }
 
@@ -8933,16 +9053,6 @@
     });
   }
 
-  function syncReplayDiskSaveCornerToggleUi() {
-    var btn = document.getElementById("risque-board-replay-disk-toggle");
-    if (!btn) return;
-    var gs = window.gameState;
-    var off = !!(gs && gs.risqueReplayDiskSaveDisabled);
-    btn.setAttribute("aria-pressed", off ? "true" : "false");
-    btn.setAttribute("aria-checked", off ? "true" : "false");
-    btn.textContent = off ? "REPLAY SAVE OFF" : "REPLAY SAVE ON";
-  }
-
   /**
    * Public TV: round badge in the same bottom-left slot as host (ghost placeholders for MANUAL… + autosave + EMERGENCY).
    * Host #risque-board-corner-tools stays hidden on public; this strip is the only visible corner chrome.
@@ -8977,7 +9087,7 @@
       '<div class="risque-board-op-btn risque-public-corner-ghost">MANUAL</div>' +
       '<div class="risque-board-op-btn risque-public-corner-ghost">HELP</div>' +
       '<div class="risque-board-op-btn risque-public-corner-ghost">REPLAY</div>' +
-      '<div class="risque-board-op-btn risque-public-corner-ghost risque-public-ghost-replay-save">REPLAY SAVE ON</div>' +
+      '<div class="risque-board-op-btn risque-public-corner-ghost risque-public-ghost-replay-save">SAVE + REPLAY</div>' +
       '<div class="risque-board-round-save-cluster">' +
       '<div class="risque-board-round-save-status risque-board-op-btn risque-public-corner-ghost">Autosave Config</div>' +
       '<div class="risque-board-emergency-save-btn risque-public-corner-ghost" role="presentation">EMERGENCY</div>' +
@@ -9053,8 +9163,8 @@
       '<div class="risque-board-corner-bottom" role="navigation" aria-label="Documentation, replay, autosave">' +
       '<button type="button" id="risque-board-manual" class="risque-board-op-btn">MANUAL</button>' +
       '<button type="button" id="risque-board-help" class="risque-board-op-btn">HELP</button>' +
-      '<button type="button" id="risque-board-replay-machine" class="risque-board-op-btn" title="Open Wayback on the same monitor as the Public TV window when it is open (otherwise the other desktop). Uses DD.json + rNpM.json tapes.">REPLAY</button>' +
-      '<button type="button" id="risque-board-replay-disk-toggle" class="risque-board-op-btn" role="switch" aria-checked="false" aria-pressed="false" title="Disable replay tape + disk chips (DD.json, rNpM.json) while testing performance">REPLAY SAVE ON</button>' +
+      '<button type="button" id="risque-board-replay-machine" class="risque-board-op-btn" title="Open Wayback on the same monitor as the Public TV window when it is open (otherwise the other desktop). Uses in-memory tape + save-folder files when present.">REPLAY</button>' +
+      '<button type="button" id="risque-board-save-with-replay" class="risque-board-op-btn" title="Download one JSON file with full game + replay tape for another day (larger than SAVE GAME). Routine play stays fast — disk chips off by default.">SAVE + REPLAY</button>' +
       '<div class="risque-board-round-save-cluster">' +
       '<div id="risque-board-round-save-status" class="risque-board-round-save-status risque-board-op-btn" aria-live="polite" aria-label="Autosave Config — choose folder" title="Round autosave — click to choose save folder">Autosave Config</div>' +
       '<button type="button" id="risque-board-emergency-save" class="risque-board-emergency-save-btn" title="Force immediate game + replay snapshot (mid-round). Writes game-emergency-* and replay-emergency-* files to SAVE or Downloads.">EMERGENCY</button>' +
@@ -9072,7 +9182,7 @@
       wrap.setAttribute("data-risque-corner-v", BOARD_CORNER_TOOLS_VERSION);
       wrap.setAttribute(
         "aria-label",
-        "New game, load game, save game, grace rollback, public board, hide row; manual, help, replay, replay save toggle, round autosave, emergency save"
+        "New game, load game, save game, grace rollback, public board, hide row; manual, help, replay, save with replay, round autosave, emergency save"
       );
       wrap.innerHTML = cornerInner;
       canvas.appendChild(wrap);
@@ -9080,7 +9190,7 @@
       wrap.setAttribute("data-risque-corner-v", BOARD_CORNER_TOOLS_VERSION);
       wrap.setAttribute(
         "aria-label",
-        "New game, load game, save game, grace rollback, public board, hide row; manual, help, replay, replay save toggle, round autosave, emergency save"
+        "New game, load game, save game, grace rollback, public board, hide row; manual, help, replay, save with replay, round autosave, emergency save"
       );
       wrap.innerHTML = cornerInner;
       boardCornerToolsWired = false;
@@ -9090,7 +9200,6 @@
     }
     syncBoardCornerLoadVisibility();
     syncRoundAutosaveStatusFromStorage();
-    syncReplayDiskSaveCornerToggleUi();
     if (boardCornerToolsWired) return;
     boardCornerToolsWired = true;
 
@@ -9117,13 +9226,17 @@
         var reader = new FileReader();
         reader.onload = function (e) {
           try {
-            var gs = JSON.parse(e.target.result);
+            var rawParsed = JSON.parse(e.target.result);
             var L = window.risquePhases && window.risquePhases.login;
             if (!L || typeof L.validateLoadedGameState !== "function") {
               setBoardCornerMsg("Load module not ready.");
               loadInput.value = "";
               return;
             }
+            var gs =
+              typeof L.normalizeImportedGameState === "function"
+                ? L.normalizeImportedGameState(rawParsed)
+                : rawParsed;
             if (!L.validateLoadedGameState(gs)) {
               setBoardCornerMsg("Invalid save file.");
               loadInput.value = "";
@@ -9141,7 +9254,21 @@
               /* ignore */
             }
             window.__risqueGraceCardplayStarts = [];
+            if (typeof window.risqueClearStoredSessionForNewGame === "function") {
+              try {
+                window.risqueClearStoredSessionForNewGame();
+              } catch (eClrLoad) {
+                /* ignore */
+              }
+            }
             saveState(normalized);
+            if (typeof window.risqueHostReplaceShellGameState === "function") {
+              try {
+                window.risqueHostReplaceShellGameState(normalized);
+              } catch (eRepLoad) {
+                /* ignore */
+              }
+            }
             logEvent("Loaded game from file", { phase: normalized.phase });
             var ph = normalized.phase || "cardplay";
             var dest = "game.html?phase=" + encodeURIComponent(ph);
@@ -9209,25 +9336,10 @@
         }
       });
     }
-    var replayDiskToggle = document.getElementById("risque-board-replay-disk-toggle");
-    if (replayDiskToggle) {
-      syncReplayDiskSaveCornerToggleUi();
-      replayDiskToggle.addEventListener("click", function () {
-        var gs = window.gameState;
-        if (!gs) return;
-        gs.risqueReplayDiskSaveDisabled = !gs.risqueReplayDiskSaveDisabled;
-        syncReplayDiskSaveCornerToggleUi();
-        setBoardCornerMsg(
-          gs.risqueReplayDiskSaveDisabled
-            ? "Replay save paused — no DD/rNpM tape chips (CPU/RAM lighter)."
-            : "Replay save on — DD.json + attack-phase chips write when a save folder is connected."
-        );
-        logEvent("Replay disk save toggle", { disabled: !!gs.risqueReplayDiskSaveDisabled });
-        try {
-          if (typeof saveState === "function") saveState(gs);
-        } catch (eSv) {
-          /* ignore */
-        }
+    var saveWithReplayBtn = document.getElementById("risque-board-save-with-replay");
+    if (saveWithReplayBtn) {
+      saveWithReplayBtn.addEventListener("click", function () {
+        triggerHostSaveGameAndReplay("map corner");
       });
     }
     var roundSaveStatusEl = document.getElementById("risque-board-round-save-status");

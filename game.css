@@ -1023,8 +1023,8 @@ html.risque-public-wayback-mirror.risque-view-public #risque-main-panel-body {
   max-width: 100%;
 }
 
-/* Same minimum width as REPLAY SAVE ON/OFF (~13.5rem) — fits “Autosave Config”. */
-#risque-board-replay-disk-toggle,
+/* Same minimum width as SAVE + REPLAY (~13.5rem) — fits “Autosave Config”. */
+#risque-board-save-with-replay,
 .risque-board-round-save-cluster .risque-board-round-save-status {
   box-sizing: border-box;
   min-width: 13.5rem;
@@ -1059,7 +1059,7 @@ html.risque-public-wayback-mirror.risque-view-public #risque-main-panel-body {
 
 /* Bottom map row: match top-row green chips (16px / 10px14px padding) + shared outer height. */
 .risque-board-corner-bottom .risque-board-op-btn,
-.risque-board-corner-bottom #risque-board-replay-disk-toggle {
+.risque-board-corner-bottom #risque-board-save-with-replay {
   min-height: 52px;
   padding: 10px 14px;
   white-space: nowrap;
@@ -1222,7 +1222,7 @@ html.risque-view-public .risque-public-ghost-replay-save {
 
 /* Bottom map row only: override general op-btn white-space so all chips share one line height + foot with round badge. */
 .risque-board-corner-tools .risque-board-corner-bottom > .risque-board-op-btn,
-.risque-board-corner-tools .risque-board-corner-bottom > #risque-board-replay-disk-toggle {
+.risque-board-corner-tools .risque-board-corner-bottom > #risque-board-save-with-replay {
   white-space: nowrap;
   word-break: normal;
   overflow-wrap: normal;
@@ -1342,25 +1342,26 @@ html.risque-view-public .risque-public-ghost-replay-save {
 }
 
 #risque-login-hud-root .color-swatch.blue {
-  background: #87bfff;
+  background: var(--risque-color-blue, #87bfff);
 }
 #risque-login-hud-root .color-swatch.red {
-  background: #ff0000;
+  background: var(--risque-color-red, #ff0000);
 }
 #risque-login-hud-root .color-swatch.green {
-  background: #008000;
-}
-#risque-login-hud-root .color-swatch.yellow {
-  background: #ffff00;
+  background: var(--risque-color-green, #8fd8a8);
   color: #000;
 }
-#risque-login-hud-root .color-swatch.black {
-  background: #000000;
-  color: #ffffff;
-  border: 1px solid #00ff00;
+#risque-login-hud-root .color-swatch.yellow {
+  background: var(--risque-color-yellow, #ffff00);
+  color: #000;
+}
+#risque-login-hud-root .color-swatch.white {
+  background: var(--risque-color-white, #f8fafc);
+  color: #111827;
+  border: 1px solid #94a3b8;
 }
 #risque-login-hud-root .color-swatch.pink {
-  background: #ff69b4;
+  background: var(--risque-color-pink, #ff69b4);
   color: #000;
 }
 
@@ -1699,7 +1700,7 @@ html.risque-view-public .risque-public-ghost-replay-save {
   overflow-y: auto;
   box-sizing: border-box;
   padding: 6px 8px 10px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid #94a3b8;
   border-radius: 8px;
   background: rgba(15, 23, 42, 0.97);
 }
@@ -2087,7 +2088,7 @@ html.risque-view-public .risque-public-ghost-replay-save {
 .cardplay-local-prompt {
   flex-shrink: 0;
   padding: 5px 7px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid #94a3b8;
   border-radius: 6px;
   background: #0b1220;
 }
@@ -2121,7 +2122,7 @@ html.risque-view-public .risque-public-ghost-replay-save {
   font-size: 13px;
   padding: 5px 6px;
   border-radius: 4px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid #94a3b8;
   background: #1e293b;
   color: #f8fafc;
 }
@@ -2466,7 +2467,12 @@ html.risque-view-public .risque-public-ghost-replay-save {
   min-height: 156px;
 }
 
-.risque-phase-content .cardplay-compact-root .cardplay-staging-card {
+/* Active picks: clickable to return card to upper hand. Dimmed (.played) = processed recap strip — ignore taps. */
+.risque-phase-content .cardplay-compact-root .cardplay-staging-card:not(.played) {
+  pointer-events: auto;
+  cursor: pointer;
+}
+.risque-phase-content .cardplay-compact-root .cardplay-staging-card.played {
   pointer-events: none;
   cursor: default;
 }
@@ -3293,7 +3299,7 @@ body.risque-view-host .risque-phase-content .deploy1-deploy-actions.deploy1-depl
   text-transform: uppercase;
   cursor: pointer;
   border-radius: 4px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid #94a3b8;
   background: #1e293b;
   color: #f8fafc;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65);
@@ -3301,7 +3307,7 @@ body.risque-view-host .risque-phase-content .deploy1-deploy-actions.deploy1-depl
 .risque-replay-bar-btn:hover:not(:disabled) {
   background: #334155;
   border-color: #e2e8f0;
-  color: #ffffff;
+  color: #111827;
 }
 .risque-replay-bar-btn:disabled {
   opacity: 0.55;
@@ -5957,7 +5963,7 @@ html.risque-view-public body[data-risque-phase="receivecard"] #control-voice.ucp
   padding: 8px 6px;
   box-sizing: border-box;
   background: rgba(15, 23, 42, 0.9);
-  border: 1px solid #cbd5e1;
+  border: 1px solid #94a3b8;
   border-radius: 8px;
 }
 
@@ -5971,7 +5977,7 @@ html.risque-view-public body[data-risque-phase="receivecard"] #control-voice.ucp
   max-width: 72px;
   object-fit: contain;
   border-radius: 4px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid #94a3b8;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
 }
 
@@ -7184,7 +7190,7 @@ html.risque-view-public[data-risque-phase="attack"] .ucp-voice-report.ucp-voice-
   font-size: 16px;
   padding: 6px 10px;
   border-radius: 4px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid #94a3b8;
   background: #0f172a;
   color: #e2e8f0;
   max-width: min(100%, 360px);
@@ -7403,7 +7409,7 @@ html.risque-view-public[data-risque-phase="attack"] .ucp-voice-report--public-ca
   font-size: 15px;
   font-weight: 800;
   text-align: center;
-  border: 1px solid #cbd5e1;
+  border: 1px solid #94a3b8;
   border-radius: 4px;
   background: #0f172a;
   color: #cbd5e1;
@@ -8863,7 +8869,7 @@ body.risque-view-host .cardplay-compact-root .cardplay-continue-income-wrap--hos
   width: 100%;
   padding: 20px 22px;
   border-radius: 12px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid #94a3b8;
   background: #0f172a;
   color: #e2e8f0;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
@@ -8905,7 +8911,7 @@ body.risque-view-host .cardplay-compact-root .cardplay-continue-income-wrap--hos
 .risque-side-mouse-action-btn {
   padding: 10px 14px;
   border-radius: 8px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid #94a3b8;
   background: #1e293b;
   color: #e2e8f0;
   font-size: 14px;
@@ -9569,3 +9575,5 @@ body.replay-machine-page .risque-replay-exit-btn:hover {
   color: #ffcccc;
   border-color: #ff8888;
 }
+
+
