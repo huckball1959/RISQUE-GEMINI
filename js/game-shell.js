@@ -8399,6 +8399,9 @@
       }
     }
     syncPhaseDataAttr(state);
+    /* Login-only Wayback folder badge: render() used to be the only caller of syncWaybackConnectedLoginFlag.
+     * Phase changes after sign-in often call refreshVisuals() without render(), so the green badge must sync here too. */
+    syncWaybackConnectedLoginFlag(state);
     requestAnimationFrame(function () {
       ensureBoardCornerTools();
       ensurePublicHostlikeRoundIndicatorStrip();
@@ -9385,6 +9388,17 @@
     var id = "risque-wayback-connected-flag";
     var old = document.getElementById(id);
     var isHost = !window.risqueDisplayIsPublic;
+    /* Soft-nav setup URLs (?phase=playerSelect|deal|deploy…) skip refreshVisuals — never keep the login badge. */
+    var urlPhase = "";
+    try {
+      urlPhase = String(new URL(window.location.href).searchParams.get("phase") || "").trim();
+    } catch (eUrlPh) {
+      /* ignore */
+    }
+    if (isHost && urlPhase && urlPhase !== "login") {
+      if (old && old.parentNode) old.parentNode.removeChild(old);
+      return;
+    }
     var isLogin = gs && String(gs.phase || "") === "login";
     if (
       isHost &&
@@ -10855,6 +10869,8 @@
       ensureBoardCornerTools();
       var gs = getActiveGameStateSnapshot();
       window.gameState = gs;
+      /* Setup flows use this path instead of refreshVisuals — hide login-only Wayback folder badge here too. */
+      syncWaybackConnectedLoginFlag(gs);
       var uio = document.getElementById("ui-overlay");
       if (uio && window.risqueRuntimeHud && typeof window.risqueRuntimeHud.ensureSetupHud === "function") {
         window.risqueRuntimeHud.ensureSetupHud(uio, bannerText != null ? bannerText : "SETUP");
