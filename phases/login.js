@@ -359,8 +359,20 @@
   var LAST_LOGIN_NAMES_KEY = "risqueLoginLastNames";
   /** Car-radio user presets: { "0": [{name,color},...], ... } — merged with built-ins when absent. */
   var LOGIN_RADIO_PRESETS_KEY = "risqueLoginRadioPresetsV1";
+  /** Flat file next to session JSON in the host save folder (picker or launcher disk). */
+  var LOGIN_RADIO_PRESETS_DISK_FILE = "risque-login-radio-presets-v1.json";
   var userPresetsMapLoaded = false;
   var userPresetsMap = {};
+
+  function normalizePresetRowsFromStorage(arr) {
+    if (!Array.isArray(arr) || !arr.length) return [];
+    return arr.map(function (r) {
+      return {
+        name: String(r.name || "").toUpperCase(),
+        color: String(r.color || "").trim()
+      };
+    });
+  }
 
   function ensureUserPresetsMapLoaded() {
     if (userPresetsMapLoaded) return;
@@ -378,12 +390,183 @@
     }
   }
 
-  function persistUserPresetsMap() {
+  function savePresetsToLocalStorage() {
     try {
       localStorage.setItem(LOGIN_RADIO_PRESETS_KEY, JSON.stringify(userPresetsMap));
     } catch (e) {
       /* ignore quota */
     }
+  }
+
+  function flushLoginPresetsToDiskAsync() {
+    if (window.risqueDisplayIsPublic) return Promise.resolve(false);
+    var bootWait =
+      typeof window.risqueWaitForAutosaveFolderBoot === "function"
+        ? window.risqueWaitForAutosaveFolderBoot()
+        : Promise.resolve(null);
+    return bootWait
+      .then(function () {
+        if (
+          typeof window.risqueSessionDiskHasWritableSaveTarget !== "function" ||
+          !window.risqueSessionDiskHasWritableSaveTarget()
+        ) {
+          return null;
+        }
+        if (typeof window.risqueSessionDiskEnsureGameDirHandle !== "function") return null;
+        return window.risqueSessionDiskEnsureGameDirHandle(null);
+      })
+      .then(function (dh) {
+        if (!dh || typeof window.risqueSessionDiskWriteTextFile !== "function") return false;
+        var json;
+        try {
+          json = JSON.stringify(userPresetsMap, null, 2);
+        } catch (eJ) {
+          return false;
+        }
+        return window.risqueSessionDiskWriteTextFile(dh, LOGIN_RADIO_PRESETS_DISK_FILE, json).then(function (okW) {
+          return !!okW;
+        });
+      })
+      .catch(function () {
+        return false;
+      });
+  }
+
+  /**
+   * Merge preset slots from disk into memory (per-slot: non-empty arrays win).
+   * Updates localStorage only — avoids rewriting disk during hydrate.
+   */
+  function mergeDiskPresetMapIntoMemory(diskObj) {
+    if (!diskObj || typeof diskObj !== "object" || Array.isArray(diskObj)) return false;
+    var merged = false;
+    Object.keys(diskObj).forEach(function (k) {
+      var rows = normalizePresetRowsFromStorage(diskObj[k]);
+      if (!rows.length) return;
+      userPresetsMap[k] = rows.map(function (r) {
+        return { name: r.name, color: r.color };
+      });
+      merged = true;
+    });
+    return merged;
+  }
+
+  /**
+   * Repo-shipped defaults: fill only slots that have no saved rows yet (localStorage was empty for that slot).
+   * Applied before save-folder merge so disk still overrides per slot.
+   */
+  function mergeBundledPresetGapsIntoMemory(bundledObj) {
+    if (!bundledObj || typeof bundledObj !== "object" || Array.isArray(bundledObj)) return false;
+    var merged = false;
+    Object.keys(bundledObj).forEach(function (k) {
+      var rows = normalizePresetRowsFromStorage(bundledObj[k]);
+      if (!rows.length) return;
+      if (normalizePresetRowsFromStorage(userPresetsMap[k]).length > 0) return;
+      userPresetsMap[k] = rows.map(function (r) {
+        return { name: r.name, color: r.color };
+      });
+      merged = true;
+    });
+    return merged;
+  }
+
+  function bundledLoginPresetsFetchUrl() {
+    if (typeof window.risqueResolveDocUrl === "function") {
+      var u = window.risqueResolveDocUrl("loginRadioPresets");
+      if (u) return u;
+    }
+    return LOGIN_RADIO_PRESETS_DISK_FILE;
+  }
+
+  function fetchBundledLoginPresetsText() {
+    if (typeof fetch !== "function") return Promise.resolve(null);
+    var url = bundledLoginPresetsFetchUrl();
+    return fetch(url, { cache: "no-store" })
+      .then(function (r) {
+        return r.ok ? r.text() : null;
+      })
+      .catch(function () {
+        return null;
+      });
+  }
+
+  /** True if the map has at least one saved preset slot with one or more players (browser or merged memory). */
+  function userPresetsMapHasSavedRows(map) {
+    var m = map != null ? map : userPresetsMap;
+    if (!m || typeof m !== "object") return false;
+    var keys = Object.keys(m);
+    var i;
+    for (i = 0; i < keys.length; i += 1) {
+      if (normalizePresetRowsFromStorage(m[keys[i]]).length > 0) return true;
+    }
+    return false;
+  }
+
+  function hydrateLoginPresetsFromDisk(formRoot, onLog) {
+    if (window.risqueDisplayIsPublic) return;
+    ensureUserPresetsMapLoaded();
+    var bootWait =
+      typeof window.risqueWaitForAutosaveFolderBoot === "function"
+        ? window.risqueWaitForAutosaveFolderBoot()
+        : Promise.resolve(null);
+    bootWait
+      .then(function () {
+        var bundledP = fetchBundledLoginPresetsText();
+        var diskP = Promise.resolve(null);
+        if (typeof window.risqueSessionDiskEnsureGameDirHandle === "function") {
+          diskP = window.risqueSessionDiskEnsureGameDirHandle(null).then(function (dh) {
+            if (!dh || typeof window.risqueSessionDiskReadTextFile !== "function") return null;
+            return window.risqueSessionDiskReadTextFile(dh, LOGIN_RADIO_PRESETS_DISK_FILE);
+          });
+        }
+        return Promise.all([bundledP, diskP]);
+      })
+      .then(function (pair) {
+        var bundledTxt = pair[0];
+        var diskTxt = pair[1];
+        var mergedBundled = false;
+        if (bundledTxt != null && typeof bundledTxt === "string" && String(bundledTxt).trim()) {
+          try {
+            mergedBundled = mergeBundledPresetGapsIntoMemory(JSON.parse(bundledTxt));
+          } catch (eBundled) {
+            mergedBundled = false;
+          }
+        }
+        var mergedFromDisk = false;
+        if (diskTxt != null && typeof diskTxt === "string" && String(diskTxt).trim()) {
+          try {
+            mergedFromDisk = mergeDiskPresetMapIntoMemory(JSON.parse(diskTxt));
+          } catch (eParse) {
+            mergedFromDisk = false;
+          }
+        }
+        if (mergedBundled || mergedFromDisk) {
+          savePresetsToLocalStorage();
+          if (formRoot) refreshAllPresetButtonTitles(formRoot);
+        }
+        if (mergedFromDisk && typeof onLog === "function") {
+          onLog("Login presets merged from save folder (" + LOGIN_RADIO_PRESETS_DISK_FILE + ")");
+        }
+        if (mergedBundled && typeof onLog === "function") {
+          onLog(
+            "Login preset slots filled from bundled file (" + bundledLoginPresetsFetchUrl() + ")"
+          );
+        }
+        if (!mergedFromDisk && userPresetsMapHasSavedRows()) {
+          return flushLoginPresetsToDiskAsync().then(function (okFlush) {
+            if (okFlush && typeof onLog === "function") {
+              onLog(
+                "Login presets synced from browser storage to save folder (" + LOGIN_RADIO_PRESETS_DISK_FILE + ")"
+              );
+            }
+          });
+        }
+      })
+      .catch(function () {});
+  }
+
+  function persistUserPresetsMap() {
+    savePresetsToLocalStorage();
+    flushLoginPresetsToDiskAsync();
   }
 
   /** Current lineup from the form (name + color); only complete rows. */
@@ -948,6 +1131,7 @@
     }
 
     attachCarRadioPresetControls(formRoot, onLog, elError, scheduleLoginMirrorPush);
+    hydrateLoginPresetsFromDisk(formRoot, onLog);
 
     var randomOrderBtn = formRoot.querySelector("#risque-login-random-order");
     if (randomOrderBtn && !window.risqueDisplayIsPublic) {

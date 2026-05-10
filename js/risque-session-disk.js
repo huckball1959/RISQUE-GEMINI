@@ -119,9 +119,8 @@
     return Promise.resolve({ game: cachedGameDh, replay: cachedReplayDh });
   }
 
-  /** Opens the picked save root for both file types. */
+  /** Opens the picked save root for both file types (flat layout; gs unused). */
   function ensureSessionPairHandles(gs) {
-    if (!gs || typeof gs !== "object") return Promise.resolve(null);
     if (cachedGameDh && cachedReplayDh && cachedSessionKey === "__save_root__") {
       return Promise.resolve({ game: cachedGameDh, replay: cachedReplayDh });
     }
@@ -846,6 +845,11 @@
     if (!gs.risqueGameWinAutosaved) return Promise.resolve(false);
     if (!hasWritableSaveTarget()) return Promise.resolve(false);
     return Promise.resolve(true);
+  };
+
+  /** Read UTF-8 text from the save root (or virtual launcher path); null if missing/unreadable. */
+  window.risqueSessionDiskReadTextFile = function (dirHandle, fname) {
+    return readTextFile(dirHandle, fname);
   };
 
   window.risqueSessionDiskWriteTextFile = function (dirHandle, fname, text) {

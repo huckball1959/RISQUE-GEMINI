@@ -21,7 +21,8 @@
     help: "docs/help.html",
     conquer: "game.html?phase=conquer",
     win: "win.html",
-    loginRecovery: LOGIN_RECOVERY
+    loginRecovery: LOGIN_RECOVERY,
+    loginRadioPresets: "risque-login-radio-presets-v1.json"
   };
 
   var FALLBACK = {
@@ -32,7 +33,8 @@
     conquer: "game.html?phase=conquer",
     win: "win.html",
     loginRecovery: LOGIN_RECOVERY,
-    replayMachine: "replay-machine.html"
+    replayMachine: "replay-machine.html",
+    loginRadioPresets: "risque-login-radio-presets-v1.json"
   };
 
   window.risqueResolveDocUrl = function (name) {
