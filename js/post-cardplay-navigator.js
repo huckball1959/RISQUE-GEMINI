@@ -7,8 +7,7 @@
 
   var Calc = (window.risqueIncomeCalculators && window.risqueIncomeCalculators.ID) || {
     STANDARD_INCOME: "standard-income",
-    CONQUEST_BOOKS_CONTINENTS: "conquest-books-continents",
-    AERIAL_DEPLOY: "aerial-deploy"
+    CONQUEST_BOOKS_CONTINENTS: "conquest-books-continents"
   };
 
   function normalizeLegacyIncomeUrl(legacyNext) {
@@ -60,13 +59,9 @@
    * @returns {{ calculatorId: string, phase: string, href: string }}
    */
   function resolveAfterRuntimeCardplay(gs, legacyNext) {
-    if (gs && gs.aerialAttackEligible) {
-      return {
-        calculatorId: Calc.AERIAL_DEPLOY,
-        phase: "deploy",
-        href: "game.html?phase=deploy&kind=turn"
-      };
-    }
+    /* Do NOT branch on `aerialAttackEligible` here. Wildcard aerial sets that flag so the player has a
+     * deploy-phase aerial use; it must stay true through income. Skipping income sent hosts straight to
+     * deploy with phase=income never run — book/bank stayed at 0. */
     var useConquerIncome = shouldUseConquerRuntimeIncome(gs, legacyNext);
     if (useConquerIncome) {
       return {

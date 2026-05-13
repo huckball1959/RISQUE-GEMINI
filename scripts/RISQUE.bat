@@ -21,6 +21,7 @@ REM    RISQUE.bat -File                  (legacy; same as default local file://)
 REM    RISQUE.bat -NoEmergencyWatcher    (legacy; emergency watcher not started by default)
 REM    RISQUE.bat -NoReplayDebug         (local only: turn off automatic replay tape console logging)
 REM    Or set env RISQUE_NO_REPLAY_DEBUG=1 before launching.
+REM    Or set env RISQUE_PERIODIC_RESTART_ROUNDS=0 to disable periodic full browser restarts (local + disk API only).
 REM
 REM ============================================================================
 

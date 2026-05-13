@@ -75,6 +75,7 @@
     "risqueReplayByRound",
     "risqueReplayPlaybackActive",
     "risqueReplayHudRound",
+    "risqueReplayHudActorLine",
     "risqueReplayBattleFlashLabels",
     "risquePublicReplayRound",
     "risquePublicReplayEliminationSplash",

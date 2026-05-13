@@ -87,6 +87,24 @@
     );
   };
 
+  /** Re-read launcher paths (bypasses one-shot cache) so receive-card sees periodicBrowserRestartEveryRounds after a late write. */
+  window.risqueFetchLauncherPathsJsonFresh = function () {
+    return fetch("risque-launcher-paths.json", { cache: "no-store" })
+      .then(function (r) {
+        if (!r.ok) return null;
+        return r.json();
+      })
+      .then(function (parsed) {
+        if (parsed) {
+          launcherPathsPromise = Promise.resolve(parsed);
+        }
+        return parsed;
+      })
+      .catch(function () {
+        return null;
+      });
+  };
+
   /** Single-flight fetch of scripts-written paths (same folder as site root when served). */
   var launcherPathsPromise = null;
   window.risqueFetchLauncherPathsJson = function () {

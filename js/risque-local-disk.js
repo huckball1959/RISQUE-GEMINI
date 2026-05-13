@@ -73,6 +73,66 @@
     });
   };
 
+  /**
+   * After disk bootstrap: if URL ?risqueResumePeriodicCheckpoint=1 and/or LS resume flag is set, read
+   * risque-periodic-restart-game.json via POST (fetch works from file:// where sync XHR may not) and jump to cardplay.
+   * @returns {Promise<boolean>} true if navigation was triggered
+   */
+  window.risqueLocalDiskTryApplyPeriodicRestartCheckpoint = function () {
+    if (typeof window !== "undefined" && window.risqueDisplayIsPublic) return Promise.resolve(false);
+    var want = false;
+    try {
+      want = new URL(window.location.href).searchParams.get("risqueResumePeriodicCheckpoint") === "1";
+    } catch (eU) {
+      /* ignore */
+    }
+    try {
+      if (localStorage.getItem("risqueAutoResumeCardplayAfterLauncherRestart") === "1") want = true;
+    } catch (eL) {
+      /* ignore */
+    }
+    if (!want) return Promise.resolve(false);
+    if (!apiBase) return Promise.resolve(false);
+    return post("/api/read", { path: "risque-periodic-restart-game.json" })
+      .then(function (r) {
+        return r.ok ? r.json() : null;
+      })
+      .then(function (j) {
+        if (!j || !j.ok || j.content == null) return false;
+        var raw = String(j.content);
+        var gs;
+        try {
+          gs = JSON.parse(raw);
+        } catch (eP) {
+          return false;
+        }
+        if (!gs || gs.phase !== "cardplay" || !gs.players || !gs.players.length) return false;
+        try {
+          localStorage.setItem("gameState", raw);
+        } catch (eS) {
+          /* ignore */
+        }
+        try {
+          localStorage.removeItem("risqueAutoResumeCardplayAfterLauncherRestart");
+        } catch (eR) {
+          /* ignore */
+        }
+        var rd = "";
+        try {
+          rd = new URL(window.location.href).searchParams.get("replayDebug") || "";
+        } catch (e2) {
+          /* ignore */
+        }
+        var target = "game.html?phase=cardplay&legacyNext=income.html";
+        if (rd === "1" || rd === "0") target += "&replayDebug=" + rd;
+        window.location.replace(target);
+        return true;
+      })
+      .catch(function () {
+        return false;
+      });
+  };
+
   window.risqueLocalDiskWrite = function (relPath, text) {
     var p = String(relPath || "").replace(/\\/g, "/").replace(/^\/+/, "");
     return post("/api/write", { path: p, content: text != null ? String(text) : "" }).then(function (r) {
@@ -112,6 +172,14 @@
     var d = String(dirRel || "").replace(/\\/g, "/").replace(/^\/+/, "");
     return post("/api/delete-prefix", { dir: d, prefix: String(prefix || "") }).then(function (r) {
       if (!r.ok) throw new Error("risque-disk delete-prefix failed");
+      return r.json();
+    });
+  };
+
+  /** Local launcher only: spawn risque-browser-restart-job.ps1 (kill RISQUE-tagged Chromium/Edge, re-run RISQUE.bat -SkipMenu). */
+  window.risqueLocalDiskRequestBrowserRestart = function () {
+    return post("/api/restart-browser", { confirm: "risque-restart" }).then(function (r) {
+      if (!r.ok) throw new Error("risque-disk restart-browser failed");
       return r.json();
     });
   };

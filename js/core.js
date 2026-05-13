@@ -1002,6 +1002,10 @@ window.gameUtils = {
         delete gameState.risqueCardplayPublicPlayerSnapshot;
         changed = true;
       }
+      if (gameState.risquePublicCardplayAerialSkipHostDecisionSeq != null) {
+        delete gameState.risquePublicCardplayAerialSkipHostDecisionSeq;
+        changed = true;
+      }
     }
 
     if (this.normalizeAerialWildcardCounters(gameState)) {

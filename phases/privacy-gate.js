@@ -52,6 +52,8 @@
    * @param {string} [opts.navigateTo] - if set, assignment location after Continue (after onContinue unless it returns false)
    * @param {function():boolean|void} [opts.onContinue] - optional; return false to cancel navigation
    * @param {function(string)=} [opts.onLog]
+   * @param {number} [opts.autoContinueAfterMs] - if positive, auto-clicks Continue after this delay (tablet handoff / restart banner)
+   * @param {boolean} [opts.retainOverlayAfterContinue] - if true (and no navigateTo), keep the overlay after Continue (e.g. async browser restart — avoids revealing underlying UI).
    */
   function mount(parent, opts) {
     opts = opts || {};
@@ -60,6 +62,7 @@
     var buttonLabel = opts.buttonLabel || "Continue";
     var navigateTo = opts.navigateTo;
     var onContinue = opts.onContinue;
+    var retainOverlay = !!opts.retainOverlayAfterContinue;
 
     injectStyles();
     var existing = document.getElementById("risque-privacy-overlay");
@@ -78,6 +81,19 @@
     btn.textContent = buttonLabel;
 
     (parent || document.body).appendChild(overlay);
+
+    var autoMs = opts.autoContinueAfterMs;
+    if (typeof autoMs === "number" && autoMs > 0 && btn) {
+      window.setTimeout(function () {
+        try {
+          if (document.getElementById("risque-privacy-overlay") === overlay && overlay.isConnected) {
+            btn.click();
+          }
+        } catch (eAuto) {
+          /* ignore */
+        }
+      }, autoMs);
+    }
 
     function log(msg) {
       if (typeof onLog === "function") onLog(msg);
@@ -111,6 +127,14 @@
           window.location.href = navigateTo;
         }
         overlay.remove();
+      } else if (retainOverlay) {
+        try {
+          btn.disabled = true;
+          btn.setAttribute("aria-hidden", "true");
+          btn.style.visibility = "hidden";
+        } catch (eRet) {
+          /* ignore */
+        }
       } else {
         /* In-place handoff: let the next frame(s) paint under the overlay so removing it does not flash. */
         requestAnimationFrame(function () {
@@ -148,7 +172,10 @@
       message: withHostSaveReminder(opts.message || "Continue"),
       buttonLabel: opts.buttonLabel || "Continue",
       onContinue: onContinue,
-      onLog: logFn
+      onLog: logFn,
+      autoContinueAfterMs:
+        typeof opts.autoContinueAfterMs === "number" && opts.autoContinueAfterMs > 0 ? opts.autoContinueAfterMs : 0,
+      retainOverlayAfterContinue: !!opts.retainOverlayAfterContinue
     });
   }
 

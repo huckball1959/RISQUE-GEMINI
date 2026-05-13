@@ -366,8 +366,8 @@ function clearBattleLossFlashNow() {
   if (window.gameState && window.gameState.risqueBattleLossFlashLabels) {
     delete window.gameState.risqueBattleLossFlashLabels;
   }
-  if (had && typeof window.risqueMirrorPushGameState === 'function') {
-    window.risqueMirrorPushGameState();
+  if (had) {
+    risqueAttackScheduleMirrorPush();
   }
 }
 
@@ -635,6 +635,15 @@ function risqueAttackScheduleMirrorPush() {
   }
 }
 
+/** Immediate mirror + disk sync — use before win UI / navigation where the public tab must see final state this tick. */
+function risqueAttackFlushMirrorPush() {
+  if (typeof window.risqueFlushMirrorPush === 'function') {
+    window.risqueFlushMirrorPush();
+  } else {
+    risqueAttackScheduleMirrorPush();
+  }
+}
+
 function prependCombatLog(text, kind = 'battle') {
   const logEl = elements.logText || document.getElementById('log-text');
   if (!logEl) return;
@@ -839,9 +848,7 @@ function checkPlayerElimination(defenderPlayer) {
   saveGameState();
   /* Win replay + disk autosave: defer to tryImmediateGameWinAfterElimination / checkWinCondition so the
    * final board (troop transfer, defender removed from players) is on tape before celebration UI. */
-  if (typeof window.risqueMirrorPushGameState === 'function') {
-    window.risqueMirrorPushGameState();
-  }
+  risqueAttackScheduleMirrorPush();
   if (typeof window.risqueRefreshControlVoiceMirror === 'function') {
     window.risqueRefreshControlVoiceMirror(window.gameState);
   }
@@ -973,9 +980,7 @@ function tryImmediateGameWinAfterElimination(player, opponent, postCampaignAutoT
   }
   teardownAttackTroopTransferWheel();
   saveGameState();
-  if (typeof window.risqueMirrorPushGameState === 'function') {
-    window.risqueMirrorPushGameState();
-  }
+  risqueAttackScheduleMirrorPush();
   if (typeof window.risqueReplayEnsureLatestBoardFrame === 'function') {
     try {
       window.risqueReplayEnsureLatestBoardFrame(window.gameState);
@@ -1026,9 +1031,7 @@ function checkWinCondition() {
       })
       .then(function () {
         logToStorage('Win condition met');
-        if (typeof window.risqueMirrorPushGameState === 'function') {
-          window.risqueMirrorPushGameState();
-        }
+        risqueAttackFlushMirrorPush();
         if (typeof window.risqueMountImmediateGameWinOverlay === 'function') {
           window.risqueMountImmediateGameWinOverlay(window.gameState.winner);
         } else {
@@ -1791,9 +1794,7 @@ function startDiceSpinForSnap(snap) {
       }
     }
   }
-  if (typeof window.risqueMirrorPushGameState === 'function') {
-    window.risqueMirrorPushGameState();
-  }
+  risqueAttackScheduleMirrorPush();
 }
 
 function revealDiceFromSnap(snap) {
@@ -1839,9 +1840,7 @@ function revealDiceFromSnap(snap) {
       defenderDiceCount: defenderDiceCount
     };
   }
-  if (typeof window.risqueMirrorPushGameState === 'function') {
-    window.risqueMirrorPushGameState();
-  }
+  risqueAttackScheduleMirrorPush();
 }
 
 /**
@@ -1956,9 +1955,7 @@ function showAttackEliminatedProceedToConquerPrompt(attackerPlayer, defenderPlay
             } catch (eSave) {
               /* ignore */
             }
-            if (typeof window.risqueMirrorPushGameState === 'function') {
-              window.risqueMirrorPushGameState();
-            }
+            risqueAttackFlushMirrorPush();
           }
           window.location.href = risqueAttackDoc('conquer');
         }
@@ -2140,9 +2137,7 @@ function applyBattleRoundAfterRoll(snap, opts) {
       );
       isAcquiring = false;
       saveGameState();
-      if (typeof window.risqueMirrorPushGameState === 'function') {
-        window.risqueMirrorPushGameState();
-      }
+      risqueAttackScheduleMirrorPush();
       window.gameUtils.renderTerritories(null, window.gameState);
       window.gameUtils.renderStats(window.gameState);
       /* Battle tape: capture frame above + autoCompleteTroopTransferLeaveBehind's record — avoid third duplicate here. */
@@ -2184,9 +2179,7 @@ function applyBattleRoundAfterRoll(snap, opts) {
         defenderName: opponent.name
       };
       saveGameState();
-      if (typeof window.risqueMirrorPushGameState === 'function') {
-        window.risqueMirrorPushGameState();
-      }
+      risqueAttackScheduleMirrorPush();
       initTroopTransfer();
       return { conquered: true };
     }
@@ -2815,9 +2808,7 @@ function pausableBlitz() {
       });
     }
     syncPausableBlitzButtonVisibility();
-    if (typeof window.risqueMirrorPushGameState === 'function') {
-      window.risqueMirrorPushGameState();
-    }
+    risqueAttackScheduleMirrorPush();
     return;
   }
 
@@ -2834,9 +2825,7 @@ function pausableBlitz() {
     dismissPrompt();
     pausableBlitzTick();
     syncPausableBlitzButtonVisibility();
-    if (typeof window.risqueMirrorPushGameState === 'function') {
-      window.risqueMirrorPushGameState();
-    }
+    risqueAttackScheduleMirrorPush();
     return;
   }
 
@@ -2899,9 +2888,7 @@ function initTroopTransfer() {
       sourceTroops: attacking.troops,
       destTroops: acquired.troops
     };
-    if (typeof window.risqueMirrorPushGameState === 'function') {
-      window.risqueMirrorPushGameState();
-    }
+    risqueAttackScheduleMirrorPush();
   } catch (eSeal) {
     /* ignore */
   }
@@ -2972,9 +2959,7 @@ function initTroopTransfer() {
         window.gameState.risquePublicAttackTransferSummary = `${player.name} transfers ${totalToDest} troops from ${prettyTerritoryName(
           attacking.name
         )} to ${prettyTerritoryName(acquired.name)}.`;
-        if (typeof window.risqueMirrorPushGameState === 'function') {
-          window.risqueMirrorPushGameState();
-        }
+        risqueAttackScheduleMirrorPush();
         saveGameState();
         if (typeof window.risqueReplayRecordBattle === 'function') {
           try {
@@ -3218,9 +3203,7 @@ function cancelAttack() {
   }
   resetAttackNumericInputs();
   saveGameState();
-  if (typeof window.risqueMirrorPushGameState === 'function') {
-    window.risqueMirrorPushGameState();
-  }
+  risqueAttackScheduleMirrorPush();
   syncAttackPhaseActionLocks();
 }
 
@@ -3272,9 +3255,7 @@ function publishPublicBattleBanner(primary, report) {
   if (!window.gameState) return;
   window.gameState.risquePublicBlitzBanner = primary != null ? String(primary) : '';
   window.gameState.risquePublicBlitzBannerReport = report != null ? String(report) : '';
-  if (typeof window.risqueMirrorPushGameState === 'function') {
-    window.risqueMirrorPushGameState();
-  }
+  risqueAttackScheduleMirrorPush();
 }
 
 function clearConditionCountdownMirror() {
@@ -3288,9 +3269,7 @@ function clearConditionCountdownMirror() {
 }
 
 function pushConditionCountdownRefresh() {
-  if (typeof window.risqueMirrorPushGameState === 'function') {
-    window.risqueMirrorPushGameState();
-  }
+  risqueAttackScheduleMirrorPush();
   if (typeof window.risqueRefreshControlVoiceMirror === 'function') {
     try {
       window.risqueRefreshControlVoiceMirror(window.gameState);
@@ -3360,9 +3339,7 @@ function publishPublicCampaignEndLackOfTroops() {
   if (!window.gameState) return;
   window.gameState.risquePublicCampaignEndPrimary = 'Campaign end';
   window.gameState.risquePublicCampaignEndReport = 'Lack of troops';
-  if (typeof window.risqueMirrorPushGameState === 'function') {
-    window.risqueMirrorPushGameState();
-  }
+  risqueAttackScheduleMirrorPush();
 }
 
 /**
@@ -3405,9 +3382,7 @@ function showHostCampaignHaltedConditionMetVoice(stopAtTerritoryLabel) {
   } catch (eSave) {
     /* ignore */
   }
-  if (typeof window.risqueMirrorPushGameState === 'function') {
-    window.risqueMirrorPushGameState();
-  }
+  risqueAttackScheduleMirrorPush();
 }
 
 function clearPublicCampaignEndMirror() {
@@ -3496,9 +3471,7 @@ function applyPostCampaignOutcomeAndIdlePrompt(primary, report, reportClass) {
   } catch (eSave) {
     /* ignore */
   }
-  if (typeof window.risqueMirrorPushGameState === 'function') {
-    window.risqueMirrorPushGameState();
-  }
+  risqueAttackScheduleMirrorPush();
 }
 
 function campaignTypeDisplayName() {
@@ -3650,9 +3623,7 @@ function paintInstantCampaignHud(reportLine, mirrorOpts) {
               ? 'ucp-voice-report--instant'
               : ''
       };
-      if (typeof window.risqueMirrorPushGameState === 'function') {
-        window.risqueMirrorPushGameState();
-      }
+      risqueAttackScheduleMirrorPush();
     }
   } catch (eCampVoice) {
     /* ignore */
@@ -3852,9 +3823,7 @@ function syncCampaignWarpathMirror() {
       window.__risqueCampaignWarpathLabels && window.__risqueCampaignWarpathLabels.length
         ? window.__risqueCampaignWarpathLabels.slice()
         : [];
-    if (typeof window.risqueMirrorPushGameState === 'function') {
-      window.risqueMirrorPushGameState();
-    }
+    risqueAttackScheduleMirrorPush();
   }
 }
 
@@ -4526,9 +4495,7 @@ function toggleCampaignStepPause() {
     dismissPrompt();
   }
   syncAttackStepControlsVisibility();
-  if (typeof window.risqueMirrorPushGameState === 'function') {
-    window.risqueMirrorPushGameState();
-  }
+  risqueAttackScheduleMirrorPush();
 }
 
 function pauseCampaignRoundTick() {
@@ -5432,9 +5399,7 @@ function backFromAerialPreview() {
   }
   showPrompt('Select source territory for aerial attack.', [{ label: 'Cancel', onClick: cancelAttack }]);
   saveGameState();
-  if (typeof window.risqueMirrorPushGameState === 'function') {
-    window.risqueMirrorPushGameState();
-  }
+  risqueAttackScheduleMirrorPush();
   syncAttackPhaseActionLocks();
 }
 
@@ -5481,9 +5446,7 @@ function confirmAerialBridgeCommit() {
   updateBattlePanelReadout();
   saveGameState();
   syncAttackPhaseActionLocks();
-  if (typeof window.risqueMirrorPushGameState === 'function') {
-    window.risqueMirrorPushGameState();
-  }
+  risqueAttackScheduleMirrorPush();
   showPrompt('Select territory to attack from.', [{ label: 'Cancel', onClick: cancelAttack }]);
 }
 
@@ -5850,9 +5813,7 @@ function initAttackPhase(mountEpoch) {
 
     if (aerialStateMigrated || phaseCoercedToAttack) {
       saveGameState();
-      if (typeof window.risqueMirrorPushGameState === 'function') {
-        window.risqueMirrorPushGameState();
-      }
+      risqueAttackScheduleMirrorPush();
     }
 
     if (String(gameState.attackPhase || '') !== 'pending_transfer') {

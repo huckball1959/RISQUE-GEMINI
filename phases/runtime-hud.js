@@ -37,6 +37,7 @@
       '<div class="risque-public-wayback-round-row" role="status">' +
       '<span class="risque-public-wayback-round-label">ROUND PLAYING</span>' +
       '<span id="risque-public-wayback-round-num" class="risque-public-wayback-round-num">—</span>' +
+      '<span id="risque-public-wayback-actor" class="risque-public-wayback-actor" hidden aria-hidden="true"></span>' +
       "</div></div>" +
       '<div id="hud-attack-chrome" class="hud-attack-chrome">' +
         '<div class="attack-dice-columns">' +

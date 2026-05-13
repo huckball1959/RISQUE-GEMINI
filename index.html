@@ -75,6 +75,82 @@
 
   <script>
     (function () {
+      function readDiskTextSyncRs(relPath) {
+        try {
+          var portRs = 5599;
+          try {
+            var dpRs = new URLSearchParams(location.search).get("diskPort");
+            if (dpRs) {
+              var nRs = parseInt(dpRs, 10);
+              if (nRs > 0 && nRs < 65536) portRs = nRs;
+            }
+          } catch (e0Rs) {}
+          var xhrRs = new XMLHttpRequest();
+          xhrRs.open("POST", "http://127.0.0.1:" + portRs + "/api/read", false);
+          xhrRs.setRequestHeader("Content-Type", "application/json");
+          xhrRs.send(JSON.stringify({ path: String(relPath || "").replace(/^\/+/, "") }));
+          if (xhrRs.status < 200 || xhrRs.status >= 300) return "";
+          var jRs = JSON.parse(String(xhrRs.responseText || "{}"));
+          if (!jRs || !jRs.ok || jRs.content == null) return "";
+          return String(jRs.content);
+        } catch (e1Rs) {
+          return "";
+        }
+      }
+      /* Same as game.html <head>: after periodic restart, prefer checkpoint file then localStorage (mirrors manual paste into gameState). */
+      try {
+        if (!/\bmenu=1\b/.test(location.search)) {
+          var resumeQueryRs = false;
+          try {
+            resumeQueryRs = new URLSearchParams(location.search).get("risqueResumePeriodicCheckpoint") === "1";
+          } catch (eQr) {
+            /* ignore */
+          }
+          if (localStorage.getItem("risqueAutoResumeCardplayAfterLauncherRestart") === "1" || resumeQueryRs) {
+            var fromDiskRs = readDiskTextSyncRs("risque-periodic-restart-game.json");
+            var rawRs = "";
+            if (fromDiskRs) {
+              rawRs = fromDiskRs;
+              try {
+                localStorage.setItem("gameState", rawRs);
+              } catch (eLsRs) {}
+            }
+            if (!rawRs) {
+              rawRs = localStorage.getItem("gameState");
+            }
+            if (!rawRs) {
+              try {
+                localStorage.removeItem("risqueAutoResumeCardplayAfterLauncherRestart");
+              } catch (eRmRs2) {}
+            } else {
+              var gsRs = JSON.parse(rawRs);
+              if (gsRs && gsRs.phase === "cardplay" && gsRs.players && gsRs.players.length) {
+                localStorage.removeItem("risqueAutoResumeCardplayAfterLauncherRestart");
+                var rdRs = "";
+                try {
+                  rdRs = new URLSearchParams(location.search).get("replayDebug") || "";
+                } catch (eRdRs) {
+                  /* ignore */
+                }
+                var targetRs = "game.html?phase=cardplay&legacyNext=income.html";
+                if (rdRs === "1" || rdRs === "0") targetRs += "&replayDebug=" + rdRs;
+                window.location.replace(targetRs);
+                return;
+              }
+              try {
+                localStorage.removeItem("risqueAutoResumeCardplayAfterLauncherRestart");
+              } catch (eRmRs3) {}
+            }
+          }
+        }
+      } catch (eResumeIdx) {
+        try {
+          localStorage.removeItem("risqueAutoResumeCardplayAfterLauncherRestart");
+        } catch (eRmRs) {
+          /* ignore */
+        }
+      }
+
       function gameLoginUrl() {
         return typeof window.risqueLoginRecoveryUrl === "function"
           ? window.risqueLoginRecoveryUrl()

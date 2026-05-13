@@ -99,10 +99,19 @@ $BrowserProfileHost = Join-Path $env:TEMP "risque-browser-profiles\host"
 $BrowserProfilePublic = Join-Path $env:TEMP "risque-browser-profiles\public"
 $RepoRoot = Split-Path -Parent $ScriptDir
 
+# Chromium/Edge command line marker so risque-browser-restart-job.ps1 can kill only RISQUE-launched windows.
+$Global:RisqueLauncherInstanceFlag = "--risque-launcher-instance=risque-gemini-local"
+# Round-boundary browser restart is off by default (lean session). Set RISQUE_PERIODIC_RESTART_ROUNDS=N (N>0) to re-enable.
+$PeriodicBrowserRestartRounds = 0
+if ($null -ne $env:RISQUE_PERIODIC_RESTART_ROUNDS -and "${env:RISQUE_PERIODIC_RESTART_ROUNDS}".Trim() -match '^(\d+)$') {
+    $PeriodicBrowserRestartRounds = [int]$Matches[1]
+}
+
 function Write-RisqueLauncherPaths {
     param(
         [string]$GameDir,
-        [string]$DiskApiBase = ""
+        [string]$DiskApiBase = "",
+        [int]$PeriodicBrowserRestartEveryRounds = 0
     )
     $payload = [ordered]@{
         saveRoot               = $SaveRoot
@@ -121,6 +130,7 @@ function Write-RisqueLauncherPaths {
         archiveDir             = $SaveRoot
         archiveShortcut        = ""
         diskApiBase            = $DiskApiBase
+        periodicBrowserRestartEveryRounds = $PeriodicBrowserRestartEveryRounds
         generatedAtUtc         = (Get-Date).ToUniversalTime().ToString("o")
         psVersion              = $PSVersionTable.PSVersion.ToString()
     }
@@ -136,6 +146,61 @@ function Write-RisqueLauncherPaths {
     }
 }
 
+function Write-RisqueBrowserResumeRestartContext {
+    param(
+        [Parameter(Mandatory = $true)][string]$SaveRootPath,
+        [Parameter(Mandatory = $true)][string]$BatchPath,
+        [Parameter(Mandatory = $true)][string]$BatWorkingDirectory
+    )
+    $ctx = [ordered]@{
+        v                               = 1
+        instanceFlag                    = $RisqueLauncherInstanceFlag
+        delaySec                        = 3
+        batchPath                       = [System.IO.Path]::GetFullPath($BatchPath)
+        batchArgs                       = @("-SkipMenu")
+        batchWorkingDirectory           = [System.IO.Path]::GetFullPath($BatWorkingDirectory)
+        periodicBrowserRestartEveryRounds = $PeriodicBrowserRestartRounds
+    }
+    $outPath = Join-Path $SaveRootPath ".risque-launcher-resume-context.json"
+    try {
+        $json = $ctx | ConvertTo-Json -Depth 6
+        $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+        [System.IO.File]::WriteAllText($outPath, $json, $utf8NoBom)
+        Write-Host "Wrote browser resume restart context: $outPath" -ForegroundColor DarkGray
+    }
+    catch {
+        Write-Warning "Could not write restart context: $($_.Exception.Message)"
+    }
+}
+
+function Stop-RisqueDiskListenerOnPort {
+    param([int]$PortNum)
+    try {
+        $conns = @(Get-NetTCPConnection -LocalPort $PortNum -State Listen -ErrorAction SilentlyContinue)
+        foreach ($c in $conns) {
+            $op = $c.OwningProcess
+            if ($op -and $op -gt 0) {
+                Stop-Process -Id $op -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+    catch {
+        # ignore — port may be free or cmdlet unavailable
+    }
+    # OwningProcess is often empty without elevation; kill any shell still hosting risque-disk-server.ps1.
+    try {
+        Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+            Where-Object {
+                ($_.Name -eq "powershell.exe" -or $_.Name -eq "pwsh.exe") -and
+                $_.CommandLine -and ($_.CommandLine -like "*risque-disk-server.ps1*")
+            } |
+            ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    }
+    catch {
+    }
+    Start-Sleep -Milliseconds 900
+}
+
 function Start-RisqueLocalDiskApi {
     # Starts one hidden HttpListener helper so game.js can POST replay/session JSON into the save folder (no picker).
     param(
@@ -143,47 +208,77 @@ function Start-RisqueLocalDiskApi {
         [int]$Port
     )
     $base = "http://127.0.0.1:$Port"
+    $alreadyCurrent = $false
+    $hadListener = $false
     try {
         $resp = Invoke-WebRequest -Uri "$base/api/health" -UseBasicParsing -TimeoutSec 2
         if ($resp.StatusCode -eq 200) {
-            Write-Host "Save helper already running: $base" -ForegroundColor DarkGray
-            return $base
+            $hadListener = $true
+            try {
+                $hj = $resp.Content | ConvertFrom-Json
+                if ($null -ne $hj -and $hj.supportsRestartBrowser -eq $true) {
+                    $alreadyCurrent = $true
+                }
+            }
+            catch {
+            }
         }
     }
     catch {
         # not listening
+    }
+    if ($alreadyCurrent) {
+        Write-Host "Save helper already running: $base" -ForegroundColor DarkGray
+        return $base
+    }
+    if ($hadListener) {
+        Write-Warning "Stopping outdated save helper on port $Port (missing features); starting updated risque-disk-server.ps1."
     }
     $serverScript = Join-Path $ScriptDir "risque-disk-server.ps1"
     if (-not (Test-Path -LiteralPath $serverScript)) {
         Write-Warning ("Missing disk server script: {0} (keep repo scripts folder intact)." -f $serverScript)
         return ""
     }
-    try {
-        Start-Process -FilePath "powershell.exe" -ArgumentList @(
-            "-NoProfile", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass",
-            "-File", $serverScript,
-            "-SaveRoot", $SaveRootPath,
-            "-Port", $Port
-        ) -WindowStyle Hidden
-    }
-    catch {
-        Write-Warning "Could not start save helper: $($_.Exception.Message)"
-        return ""
-    }
-    $deadline = (Get-Date).AddSeconds(6)
-    while ((Get-Date) -lt $deadline) {
+    # Retry: stale listener often survives when TCP OwningProcess is unavailable; require supportsRestartBrowser in health.
+    for ($spin = 1; $spin -le 3; $spin++) {
+        if ($spin -gt 1) {
+            Write-Warning "Save helper on $base did not report supportsRestartBrowser; recycling listener (attempt $spin/3)."
+        }
+        Stop-RisqueDiskListenerOnPort -PortNum $Port
         try {
-            $r2 = Invoke-WebRequest -Uri "$base/api/health" -UseBasicParsing -TimeoutSec 1
-            if ($r2.StatusCode -eq 200) {
-                Write-Host "Session files will save under: $SaveRootPath" -ForegroundColor Green
-                return $base
-            }
+            Start-Process -FilePath "powershell.exe" -ArgumentList @(
+                "-NoProfile", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass",
+                "-File", $serverScript,
+                "-SaveRoot", $SaveRootPath,
+                "-Port", $Port
+            ) -WindowStyle Hidden
         }
         catch {
-            Start-Sleep -Milliseconds 250
+            Write-Warning "Could not start save helper: $($_.Exception.Message)"
+            return ""
+        }
+        $deadline = (Get-Date).AddSeconds(10)
+        while ((Get-Date) -lt $deadline) {
+            try {
+                $r2 = Invoke-WebRequest -Uri "$base/api/health" -UseBasicParsing -TimeoutSec 1
+                if ($r2.StatusCode -eq 200) {
+                    try {
+                        $hj2 = $r2.Content | ConvertFrom-Json
+                        if ($null -ne $hj2 -and $hj2.supportsRestartBrowser -eq $true) {
+                            Write-Host "Session files will save under: $SaveRootPath" -ForegroundColor Green
+                            return $base
+                        }
+                    }
+                    catch {
+                    }
+                }
+            }
+            catch {
+            }
+            Start-Sleep -Milliseconds 300
         }
     }
-    Write-Warning "Save helper did not start on $base (port in use or blocked). Replays stay in the browser until this works."
+    Write-Warning "Save helper did not start or advertise restart-browser on $base . Replays stay in the browser until this works."
     return ""
 }
 
@@ -309,7 +404,10 @@ function Get-RisqueLocalDiskHostPublicUrls {
     if ([string]::IsNullOrWhiteSpace($unixRoot)) {
         throw "Empty repo root for local file URLs."
     }
-    $hostU = "file:///$unixRoot/index.html"
+    # Host must be game.html (not index.html) so the <head> resume snippet runs on first paint after a
+    # periodic browser restart; index.html only redirects here and would otherwise leave users on login.
+    $hostLoginChain = "game.html?phase=login&loginLegacyNext=game.html%3Fphase%3DplayerSelect%26selectKind%3DfirstCard&loginLoadRedirect=game.html%3Fphase%3Dcardplay%26legacyNext%3Dincome.html"
+    $hostU = "file:///$unixRoot/$hostLoginChain"
     $pubU = "file:///$unixRoot/game.html?display=public"
     if ($ReplayDebugOff) {
         $hostU = Add-RisqueReplayDebugQuery -Url $hostU -Value '0'
@@ -457,6 +555,7 @@ function Invoke-RisqueDualMonitorBrowserLaunch {
     $hostArgs = @(
         "--user-data-dir=`"$profileDir`"",
         "--new-window",
+        $RisqueLauncherInstanceFlag,
         "--window-position=$($pRect.Left),$($pRect.Top)",
         "--window-size=$($pRect.Width),$($pRect.Height)",
         "--no-first-run",
@@ -471,6 +570,7 @@ function Invoke-RisqueDualMonitorBrowserLaunch {
     $pubArgs = @(
         "--user-data-dir=`"$profileDir`"",
         "--new-window",
+        $RisqueLauncherInstanceFlag,
         "--window-position=$($sRect.Left),$($sRect.Top)",
         "--window-size=$($sRect.Width),$($sRect.Height)",
         "--no-first-run",
@@ -546,11 +646,12 @@ if (-not [string]::IsNullOrWhiteSpace($env:RISQUE_DISK_PORT)) {
 }
 $diskApiBaseForJson = ""
 if ($Hosted) {
-    Write-RisqueLauncherPaths -GameDir $RepoRoot -DiskApiBase ""
+    Write-RisqueLauncherPaths -GameDir $RepoRoot -DiskApiBase "" -PeriodicBrowserRestartEveryRounds 0
 }
 else {
     $diskApiBaseForJson = Start-RisqueLocalDiskApi -SaveRootPath $SaveRoot -Port $diskPort
-    Write-RisqueLauncherPaths -GameDir $RepoRoot -DiskApiBase $diskApiBaseForJson
+    Write-RisqueLauncherPaths -GameDir $RepoRoot -DiskApiBase $diskApiBaseForJson -PeriodicBrowserRestartEveryRounds $PeriodicBrowserRestartRounds
+    Write-RisqueBrowserResumeRestartContext -SaveRootPath $SaveRoot -BatchPath (Join-Path $ScriptDir "RISQUE.bat") -BatWorkingDirectory $ScriptDir
 }
 
 if ($PrepareEnvOnly) {
@@ -614,6 +715,15 @@ else {
     }
     $launchUrl = $pair.Host
     $publicTvUrl = $pair.Public
+    $pendingHostResume = Join-Path $SaveRoot ".risque-pending-periodic-host-resume"
+    if (-not $Hosted -and (Test-Path -LiteralPath $pendingHostResume)) {
+        $sep = $(if ($launchUrl -match '\?') { '&' } else { '?' })
+        $launchUrl = $launchUrl + $sep + 'risqueResumePeriodicCheckpoint=1'
+        try {
+            Remove-Item -LiteralPath $pendingHostResume -Force -ErrorAction SilentlyContinue
+        }
+        catch { }
+    }
 }
 
 $useDual = (-not $SingleWindow) -and (-not [string]::IsNullOrWhiteSpace($publicTvUrl))
@@ -653,6 +763,7 @@ Write-RisqueRuntimeStatus -SaveRootPath $SaveRoot -DiskApiBase $diskApiBaseForJs
 $browserArgs = @(
     "--user-data-dir=$profileHost",
     "--new-window",
+    $RisqueLauncherInstanceFlag,
     "--no-first-run",
     "--no-default-browser-check",
     "--disable-features=Translate",

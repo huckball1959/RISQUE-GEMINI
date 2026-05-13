@@ -4,7 +4,7 @@
   Loopback HTTP API so file:// RISQUE host can write SAVE without File System Access picker.
 
 .DESCRIPTION
-  GET /api/health, POST /api/write|read|list|delete-files|delete-prefix.
+  GET /api/health, POST /api/write|read|list|delete-files|delete-prefix|restart-browser.
   RISQUE.ps1 starts this in the background before opening Chromium when launching local file:// builds.
 
 .PARAMETER SaveRoot
@@ -84,7 +84,7 @@ while ($listener.IsListening) {
 
     $req = $ctx.Request
     $res = $ctx.Response
-    $apath = $req.Url.AbsolutePath.TrimEnd('/')
+    $apath = (($req.Url.AbsolutePath + "").TrimEnd('/')).ToLowerInvariant()
 
     try {
         if ($req.HttpMethod -eq "OPTIONS") {
@@ -97,7 +97,12 @@ while ($listener.IsListening) {
         }
 
         if ($req.HttpMethod -eq "GET" -and $apath -eq "/api/health") {
-            Send-RisqueDiskJson -Response $res -Object @{ ok = $true; saveRoot = $script:Root }
+            Send-RisqueDiskJson -Response $res -Object @{
+                ok                     = $true
+                saveRoot               = $script:Root
+                supportsRestartBrowser = $true
+                diskServerApiVersion   = 2
+            }
             continue
         }
 
@@ -208,6 +213,35 @@ while ($listener.IsListening) {
                     }
             }
             Send-RisqueDiskJson -Response $res -Object @{ ok = $true; removed = $removed }
+            continue
+        }
+
+        if ($apath -eq "/api/restart-browser") {
+            $confirm = [string]$body.confirm
+            if ($confirm -ne "risque-restart") {
+                Send-RisqueDiskJson -Response $res -Object @{ ok = $false; error = "confirm" } -Code 400
+                continue
+            }
+            $jobScript = Join-Path $PSScriptRoot "risque-browser-restart-job.ps1"
+            if (-not (Test-Path -LiteralPath $jobScript)) {
+                Send-RisqueDiskJson -Response $res -Object @{ ok = $false; error = "missing risque-browser-restart-job.ps1" } -Code 500
+                continue
+            }
+            try {
+                $spawnArgs = @(
+                    "-NoProfile",
+                    "-WindowStyle", "Hidden",
+                    "-ExecutionPolicy", "Bypass",
+                    "-File", $jobScript,
+                    "-SaveRoot", $script:Root
+                )
+                Start-Process -FilePath "powershell.exe" -ArgumentList $spawnArgs -WindowStyle Hidden | Out-Null
+            }
+            catch {
+                Send-RisqueDiskJson -Response $res -Object @{ ok = $false; error = $_.Exception.Message } -Code 500
+                continue
+            }
+            Send-RisqueDiskJson -Response $res -Object @{ ok = $true; spawned = $true }
             continue
         }
 

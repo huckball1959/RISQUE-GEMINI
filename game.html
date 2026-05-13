@@ -57,13 +57,91 @@
       } catch (eRd) {}
     })();
   </script>
+  <script>
+    (function () {
+      try {
+        if (typeof window !== "undefined" && window.risqueDisplayIsPublic) return;
+        var resumeQuery = false;
+        try {
+          resumeQuery = new URL(window.location.href).searchParams.get("risqueResumePeriodicCheckpoint") === "1";
+        } catch (eQ) {
+          /* ignore */
+        }
+        /* Periodic restart: LS flag and/or launcher ?risqueResumePeriodicCheckpoint=1 (sync disk read; async retry in risqueLocalDiskTryApplyPeriodicRestartCheckpoint). */
+        if (localStorage.getItem("risqueAutoResumeCardplayAfterLauncherRestart") !== "1" && !resumeQuery) return;
+        function readDiskTextSync(relPath) {
+          try {
+            var port = 5599;
+            try {
+              var dp = new URL(window.location.href).searchParams.get("diskPort");
+              if (dp) {
+                var n = parseInt(dp, 10);
+                if (n > 0 && n < 65536) port = n;
+              }
+            } catch (e0) {}
+            var xhr = new XMLHttpRequest();
+            xhr.open("POST", "http://127.0.0.1:" + port + "/api/read", false);
+            xhr.setRequestHeader("Content-Type", "application/json");
+            xhr.send(JSON.stringify({ path: String(relPath || "").replace(/^\/+/, "") }));
+            if (xhr.status < 200 || xhr.status >= 300) return "";
+            var j = JSON.parse(String(xhr.responseText || "{}"));
+            if (!j || !j.ok || j.content == null) return "";
+            return String(j.content);
+          } catch (e1) {
+            return "";
+          }
+        }
+        var fromDisk = readDiskTextSync("risque-periodic-restart-game.json");
+        var raw = "";
+        if (fromDisk) {
+          raw = fromDisk;
+          try {
+            localStorage.setItem("gameState", raw);
+          } catch (eLs0) {}
+        }
+        if (!raw) {
+          raw = localStorage.getItem("gameState");
+        }
+        if (!raw) {
+          try {
+            localStorage.removeItem("risqueAutoResumeCardplayAfterLauncherRestart");
+          } catch (eRm0) {}
+          return;
+        }
+        var gs = JSON.parse(raw);
+        if (!gs || gs.phase !== "cardplay" || !gs.players || !gs.players.length) {
+          try {
+            localStorage.removeItem("risqueAutoResumeCardplayAfterLauncherRestart");
+          } catch (eRm1) {}
+          return;
+        }
+        localStorage.removeItem("risqueAutoResumeCardplayAfterLauncherRestart");
+        var rd = "";
+        try {
+          rd = new URL(window.location.href).searchParams.get("replayDebug") || "";
+        } catch (eRd2) {
+          /* ignore */
+        }
+        /* Omit postReceive=1 so cardplay shows tablet handoff (same device after launcher restart is a new browser session). */
+        var target = "game.html?phase=cardplay&legacyNext=income.html";
+        if (rd === "1" || rd === "0") target += "&replayDebug=" + rd;
+        window.location.replace(target);
+      } catch (eResume) {
+        try {
+          localStorage.removeItem("risqueAutoResumeCardplayAfterLauncherRestart");
+        } catch (eRm) {
+          /* ignore */
+        }
+      }
+    })();
+  </script>
   <!-- Black root only; phase changes use cross-document view transitions (Chromium) for cross-dissolve -->
   <style>
     html {
       background-color: #000;
     }
   </style>
-  <link rel="stylesheet" href="game.css?v=host-shelf-aerial-btn-hit-target-v2-2026-05-10" />
+  <link rel="stylesheet" href="game.css?v=grace-bookmark-pick-list-2026-05-12" />
   <script>
     (function () {
       try {
@@ -450,30 +528,30 @@
   <script src="js/risque-colors.js?v=map-saturation-plus25pct-2026-05-07u"></script>
   <script src="js/replay-tape.js?v=autosave-perf-tape-count-2026-05-10"></script>
   <script src="js/core.js?v=cardplay-map-highlight-host-2026-05-09"></script>
-  <script src="js/risque-session-disk.js?v=autosave-perf-checkpoint-2026-05-10"></script>
+  <script src="js/risque-session-disk.js?v=manual-tier-minimal-disk-2026-05-12"></script>
   <script src="js/risque-session-staging.js?v=staging-disk-opt-in-2026-04-29"></script>
-  <script src="js/risque-external-urls.js"></script>
-  <script src="js/risque-local-disk.js?v=launcher-disk-api-2026-05-01"></script>
+  <script src="js/risque-external-urls.js?v=launcher-paths-fresh-fetch-2026-05-12"></script>
+  <script src="js/risque-local-disk.js?v=periodic-resume-handoff-no-postreceive-2026-05-12"></script>
   <script src="phases/login.js?v=presets-bundled-json-2026-05-09"></script>
-  <script src="phases/privacy-gate.js?v=handoff-overlay-defer-rAF-2026-05-09"></script>
+  <script src="phases/privacy-gate.js?v=privacy-retain-overlay-periodic-restart-2026-05-12"></script>
   <script src="phases/player-select.js?v=roulette-max-2s-2026-05-09"></script>
   <script src="phases/deal.js?v=soft-nav-deployOrder-select-2026-05-09"></script>
   <script src="phases/deploy.js?v=unified-con-deploy-2026-05-09"></script>
   <script src="phases/conquer.js?v=conquer-mirror-order-2026-04-14"></script>
-  <script src="phases/attack.js?v=conquest-card-snapshot-canonical-2026-05-10"></script>
+  <script src="phases/attack.js?v=mirror-coalesce-lean-session-2026-05-12"></script>
   <script src="phases/runtime-hud.js?v=remove-slot-card-earned-2026-05-10"></script>
-  <script src="js/post-cardplay-navigator.js?v=lean-navigator-2026-05-09"></script>
-  <script src="phases/cardplay.js?v=con-cardplay-runtime-hud-2026-05-09"></script>
+  <script src="js/post-cardplay-navigator.js?v=no-skip-income-when-aerial-eligible-2026-05-12"></script>
+  <script src="phases/cardplay.js?v=aerial-skip-counter-no-mitt-2026-05-12"></script>
   <script src="phases/income.js?v=income-hud-continue-slot-2026-05-09"></script>
   <script src="phases/reinforce.js?v=unified-reinforce-mount-2026-05-09"></script>
-  <script src="phases/receivecard.js?v=receivecard-conquest-split-merge-2026-05-10"></script>
+  <script src="phases/receivecard.js?v=no-periodic-restart-mirror-coalesce-2026-05-12"></script>
   <script src="phases/postgame.js?v=flat-archive-msg-2026-05-02"></script>
   <script src="phases/conquer-phase.js?v=con-chain-game-html-only-2026-05-09"></script>
   <script src="phases/con-cardtransfer-phase.js?v=con-chain-game-html-only-2026-05-09"></script>
   <script src="phases/con-transfertroops-phase.js?v=con-chain-game-html-only-2026-05-09"></script>
   <script src="js/risque-save-folder-idb.js?v=autosave-folder-2026-04-30"></script>
-  <script src="js/replay-machine.js?v=launcher-disk-active-status-hint-2026-05-08c"></script>
-  <script src="js/game-shell.js?v=host-shelf-aerial-compact-2026-05-10"></script>
+  <script src="js/replay-machine.js?v=wayback-fallback-checkpoints-2026-05-12"></script>
+  <script src="js/game-shell.js?v=grace-bookmark-pick-list-2026-05-12"></script>
 </body>
 </html>
 

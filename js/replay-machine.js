@@ -962,6 +962,31 @@
     return String(n).trim().toLowerCase();
   }
 
+  /** Short line for public Wayback chrome (who is acting this frame). */
+  function replayHudActorLineForEvent(ev) {
+    if (!ev || !ev.type) return "";
+    if (ev.type === "init") return "Opening";
+    if (ev.type === "elimination") {
+      var cq = String(ev.conqueror || "").trim();
+      var df = String(ev.defeated || "").trim();
+      if (cq && df) return cq + " eliminated " + df;
+      if (df) return df + " eliminated";
+      if (cq) return cq + " elimination";
+      return "";
+    }
+    if (ev.type !== "board") return "";
+    if (ev.segment === "deal") return "";
+    var who =
+      ev.recordedForPlayer != null && String(ev.recordedForPlayer).trim() !== ""
+        ? String(ev.recordedForPlayer).trim()
+        : "";
+    var seg = ev.segment != null ? String(ev.segment) : "";
+    if (seg === "battle") return who ? who + " attacks" : "Attack phase";
+    if (seg === "deploy") return who ? who + " deploys" : "Deploy";
+    if (seg === "reinforce") return who ? who + " reinforces" : "Reinforce";
+    return "";
+  }
+
   function replayDelayForEvent(ev, ctx) {
     ctx = ctx || {};
     var relax = !!ctx.granularGlueRelax;
@@ -1003,6 +1028,10 @@
     } else {
       delete gs.risqueReplayMachineHudPhase;
     }
+
+    var actorLine = replayHudActorLineForEvent(ev);
+    if (actorLine) gs.risqueReplayHudActorLine = actorLine;
+    else delete gs.risqueReplayHudActorLine;
 
     if (ev.type === "init") {
       delete gs.risqueReplayBattleFlashLabels;
@@ -1471,6 +1500,7 @@
       delete window.gameState.phaseReplayIndex;
       delete window.gameState.risqueReplayBattleFlashLabels;
       delete window.gameState.risqueReplayMachineHudPhase;
+      delete window.gameState.risqueReplayHudActorLine;
     }
     var replayWinOneShot = false;
     if (
@@ -1837,6 +1867,114 @@
     });
   }
 
+  function readFileAsUtf8Text(file) {
+    return new Promise(function (resolve, reject) {
+      var reader = new FileReader();
+      reader.onload = function () {
+        resolve(String(reader.result || ""));
+      };
+      reader.onerror = function () {
+        reject(new Error("read"));
+      };
+      reader.readAsText(file);
+    });
+  }
+
+  /** Crude map snapshot from a saved gameState (for Wayback fallback when no replay tapes exist). */
+  function fallbackBoardSnapshotFromGameState(gs) {
+    var out = {};
+    if (!gs || !Array.isArray(gs.players)) return out;
+    gs.players.forEach(function (p) {
+      if (!p || !p.name) return;
+      (p.territories || []).forEach(function (t) {
+        if (!t || !t.name) return;
+        out[t.name] = { owner: String(p.name), troops: Number(t.troops) || 0 };
+      });
+    });
+    return out;
+  }
+
+  /**
+   * Build a minimal risque-replay-v1 tape from r{N}p{M}game.json checkpoints (sorted).
+   * Used when the folder has no DD/rNpM replay segments — coarse territory animation only.
+   */
+  async function risqueReplayBuildFallbackTapeFromDirCheckpoints(dirHandle) {
+    if (!dirHandle || typeof dirHandle.entries !== "function") return null;
+    var items = [];
+    async function collectFrom(dh) {
+      var iter = dh.entries();
+      for await (var step of iter) {
+        var name = step[0];
+        var h = step[1];
+        if (!h || h.kind !== "file") continue;
+        if (!/^r\d+p\d+game\.json$/i.test(String(name))) continue;
+        var file = await h.getFile();
+        var m = /^r(\d+)p(\d+)game\.json$/i.exec(String(name));
+        var rk = m ? Number(m[1]) * 1000 + Number(m[2]) : 0;
+        items.push({ rk: rk, file: file });
+      }
+    }
+    await collectFrom(dirHandle);
+    try {
+      var repDh = await dirHandle.getDirectoryHandle("REPLAY", { create: false });
+      await collectFrom(repDh);
+    } catch (eRep) {
+      try {
+        var repLo = await dirHandle.getDirectoryHandle("replay", { create: false });
+        await collectFrom(repLo);
+      } catch (eRep2) {
+        /* ignore */
+      }
+    }
+    if (!items.length) return null;
+    items.sort(function (a, b) {
+      return a.rk - b.rk;
+    });
+    var events = [];
+    var fi;
+    for (fi = 0; fi < items.length; fi++) {
+      var txt;
+      try {
+        txt = await readFileAsUtf8Text(items[fi].file);
+      } catch (eRead) {
+        continue;
+      }
+      var raw;
+      try {
+        raw = JSON.parse(txt);
+      } catch (eParse) {
+        continue;
+      }
+      if (!raw || !Array.isArray(raw.players)) continue;
+      var board = fallbackBoardSnapshotFromGameState(raw);
+      if (!Object.keys(board).length) continue;
+      var seg = events.length === 0 ? "deal" : "battle";
+      var r = Math.max(1, Number(raw.round) || 1);
+      var cp = raw.currentPlayer != null ? String(raw.currentPlayer).trim() : "";
+      events.push({
+        type: "board",
+        segment: seg,
+        board: board,
+        round: r,
+        recordedForPlayer: cp
+      });
+    }
+    if (!events.length) return null;
+    return {
+      format: "risque-replay-v1",
+      savedAt: Date.now(),
+      playerColors: {},
+      tape: {
+        v: TAPE_VERSION,
+        openingRecorded: true,
+        hasDealFrames: true,
+        events: events
+      }
+    };
+  }
+
+  window.risqueReplayBuildFallbackTapeFromDirCheckpoints = risqueReplayBuildFallbackTapeFromDirCheckpoints;
+
   function onFilesSelected(fileList) {
     if (!fileList || !fileList.length) {
       return;
@@ -2105,6 +2243,23 @@
     meta = await risqueReplayPreferWaybackFullTapeAsync(meta);
     meta = filterReplayMetaGranularWaybackFirst(meta);
     if (!meta.length) {
+      var fbPack = await risqueReplayBuildFallbackTapeFromDirCheckpoints(dirHandle);
+      if (fbPack && fbPack.tape && fbPack.tape.events && fbPack.tape.events.length) {
+        var fbBlob = new Blob([JSON.stringify(fbPack, null, 2)], { type: "application/json" });
+        var fbFile = new File([fbBlob], "wayback-fallback-checkpoints.json", {
+          type: "application/json",
+          lastModified: Date.now()
+        });
+        onFilesSelected([fbFile]);
+        setStatus(
+          "Fallback replay: built a coarse animation from rNpMgame-style checkpoints (no DD/rNpM tapes in this folder)."
+        );
+        updateReplayTapeCountLine(1);
+        if (!opts.skipStatus) {
+          /* keep status message visible */
+        }
+        return;
+      }
       setStatus(
         "No replay tapes in this folder — Wayback needs DD.json and rNpM.json (or *-replay.json). Files like r2p3game.json are resume checkpoints only, not animated tapes."
       );

@@ -55,6 +55,8 @@
         var def = btn.getAttribute("data-default-label") || __risqueReceiveCardContinueDefaultLabel;
         btn.disabled = false;
         btn.removeAttribute("aria-busy");
+        btn.hidden = false;
+        btn.removeAttribute("aria-hidden");
         btn.textContent = def;
       }
     }
@@ -327,7 +329,8 @@
     var btn = document.getElementById("receivecard-btn-end");
     if (btn) {
       btn.disabled = true;
-      btn.textContent = "Continuing…";
+      btn.setAttribute("aria-hidden", "true");
+      btn.hidden = true;
     }
     window.__risqueReceiveCardStagingTimer = setTimeout(function () {
       window.__risqueReceiveCardStagingTimer = null;
@@ -395,12 +398,17 @@
         if (typeof window.risqueHostReplaceShellGameState === "function") {
           window.risqueHostReplaceShellGameState(gsAfter);
         }
-        if (typeof window.risqueMirrorPushGameState === "function") {
+        if (typeof window.risqueScheduleMirrorPush === "function") {
+          window.risqueScheduleMirrorPush();
+        } else if (typeof window.risqueMirrorPushGameState === "function") {
           window.risqueMirrorPushGameState();
         }
         var nextHandoffMsg =
           "Next player\n\nHand the tablet to " + nextPlayerName + " for card play.\n\nOnly this player should tap Continue.";
         function goNextPlayerCardplay() {
+          if (typeof window.risqueFlushMirrorPush === "function") {
+            window.risqueFlushMirrorPush();
+          }
           var target = "game.html?phase=cardplay&legacyNext=income.html&postReceive=1";
           if (typeof window.risqueMarkPostReceiveCardplayBlackout === "function") {
             window.risqueMarkPostReceiveCardplayBlackout();
@@ -439,11 +447,10 @@
             ? window.risqueSessionDiskAwaitTurnWriteQueue()
             : Promise.resolve(true);
         })
-        .then(
-          function () {
-            runReceiveCardHandoffAndNavigate();
-          },
-          function (err) {
+        .then(function () {
+          runReceiveCardHandoffAndNavigate();
+        })
+        .catch(function (err) {
             receiveCardLog("Turn save / round autosave failed", err);
             receiveCardSetMessage(
               "Could not finish saving to disk. Check folder access, wait a moment, then tap Continue again."
@@ -454,8 +461,7 @@
             } catch (eRelF) {
               /* ignore */
             }
-          }
-        );
+          });
     } catch (eRcBody) {
       try {
         window.__risqueReceiveCardEndTurnBusy = false;

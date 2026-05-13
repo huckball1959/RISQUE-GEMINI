@@ -433,6 +433,11 @@
   var DEFAULT_LOAD_AFTER_LOGIN = "game.html?phase=cardplay&legacyNext=income.html";
   var loginLoadRedirect = query.get("loginLoadRedirect") || DEFAULT_LOAD_AFTER_LOGIN;
   var loginMounted = false;
+  /** Auto-remove the green Wayback folder badge after SHOW_WAYBACK_GREEN_BADGE_MS; cleared when leaving login or when not connected. */
+  var __risqueWaybackGreenBadgeHideTimer = null;
+  /** After green badge auto-hides, skip re-creating it on every refreshVisuals until login ends or folder reads disconnected. */
+  var __risqueWaybackGreenLoginBadgeConsumed = false;
+  var SHOW_WAYBACK_GREEN_BADGE_MS = 2000;
   var boardCornerToolsWired = false;
   /** So the public tab can reload into deploy1 vs deploy2 (URL may have no ?phase=). */
   var MIRROR_DEPLOY_ROUTE_KEY = "risqueMirrorDeployRoute";
@@ -1609,6 +1614,7 @@
     "risqueReplayByRound",
     "risqueReplayPlaybackActive",
     "risqueReplayHudRound",
+    "risqueReplayHudActorLine",
     "risqueReplayBattleFlashLabels",
     "risquePublicReplayRound",
     "risquePublicReplayEliminationSplash",
@@ -1703,6 +1709,7 @@
       if (String(gs.phase || "") !== "cardplay" && String(gs.phase || "") !== "con-cardplay") {
         delete forDisk.risquePublicCardplayRecap;
         delete forDisk.risquePublicCardplayRecapAckRequiredSeq;
+        delete forDisk.risquePublicCardplayAerialSkipHostDecisionSeq;
         delete forDisk.risquePublicCardplayRecapSeq;
         delete forDisk.risqueCardplayTvRecapPublished;
         delete forDisk.risqueCardplaySuppressPublicSpectator;
@@ -4912,6 +4919,10 @@
     }
     if (!decSeq) return;
 
+    if (Number(gs.risquePublicCardplayAerialSkipHostDecisionSeq) === Number(decSeq)) {
+      return;
+    }
+
     var box = document.createElement("div");
     box.className = "risque-public-cp-shelf-aerial-host";
     if (!wrapEl.classList || !wrapEl.classList.contains("risque-public-cp-shelf-aerial-beside")) {
@@ -5419,6 +5430,10 @@
 
     if (risquePublicProcRecapAnimation(proc)) {
       if (needsAerialDecision) {
+        if (Number(gs.risquePublicCardplayAerialSkipHostDecisionSeq) === Number(proc.seq)) {
+          handleAerialChoice("confirmed");
+          return;
+        }
         try {
           localStorage.setItem(
             PUBLIC_CARDPLAY_PROCESSING_STATE_KEY,
@@ -6448,6 +6463,7 @@
     try {
       var head = document.getElementById("risque-public-wayback-head");
       var numEl = document.getElementById("risque-public-wayback-round-num");
+      var actorEl = document.getElementById("risque-public-wayback-actor");
       var active = !!(gs && gs.risqueReplayPlaybackActive);
       if (active) {
         document.documentElement.classList.add("risque-public-wayback-mirror");
@@ -6465,11 +6481,28 @@
             numEl.textContent = String(n);
           }
         }
+        if (actorEl && gs) {
+          var al = gs.risqueReplayHudActorLine != null ? String(gs.risqueReplayHudActorLine).trim() : "";
+          if (al) {
+            actorEl.textContent = al;
+            actorEl.removeAttribute("hidden");
+            actorEl.setAttribute("aria-hidden", "false");
+          } else {
+            actorEl.textContent = "";
+            actorEl.setAttribute("hidden", "");
+            actorEl.setAttribute("aria-hidden", "true");
+          }
+        }
       } else {
         document.documentElement.classList.remove("risque-public-wayback-mirror");
         if (head) {
           head.setAttribute("hidden", "");
           head.setAttribute("aria-hidden", "true");
+        }
+        if (actorEl) {
+          actorEl.textContent = "";
+          actorEl.setAttribute("hidden", "");
+          actorEl.setAttribute("aria-hidden", "true");
         }
       }
     } catch (eWb) {
@@ -7050,7 +7083,7 @@
     return normalized;
   }
 
-  var GRACE_PHASE_START_MAX = 220;
+  var GRACE_PHASE_START_MAX = 500;
   /** Session-only copy of last gameState JSON before each persist — survives reload in this tab so Grace “Undo” works after refresh. */
   var GRACE_LAST_UNDO_SESSION_KEY = "risqueGraceLastUndoJson";
 
@@ -7288,7 +7321,22 @@
     return null;
   }
 
-  /** Board state at end of the previous phase (before you entered the current phase). */
+  /**
+   * Grace option 3 should land on a phase where the table can actually redo decisions:
+   * card play, deploy, reinforce, or attack — not income (spreadsheet), receive-card / get-card,
+   * or conquest bridge phases (con-income, con-deploy, …) except con-cardplay.
+   */
+  function graceSnapshotPhaseIsInteractiveRollbackTarget(ph) {
+    var p = String(ph || "").toLowerCase();
+    if (!p || p === "login") return false;
+    if (p === "income" || p === "con-income") return false;
+    if (p === "receivecard" || p === "getcard") return false;
+    if (p === "deal" || p === "playerselect" || p === "postgame") return false;
+    if (p.indexOf("con-") === 0 && p !== "con-cardplay") return false;
+    return true;
+  }
+
+  /** Board state at end of the previous *interactive* phase (skips income, receive-card, conquest handoffs, etc.). */
   function graceFindPreviousPhaseSnapshot(gs) {
     var arr = window.__risqueGraceCardplayStarts;
     if (!Array.isArray(arr) || !arr.length || !gs) return null;
@@ -7302,6 +7350,7 @@
       var pl = String(e.player || "");
       /* Skip “start of current phase” rows; next different row is end of prior phase. */
       if (ph === curPh && pl === curPlayer) continue;
+      if (!graceSnapshotPhaseIsInteractiveRollbackTarget(ph)) continue;
       return { index: i, entry: e };
     }
     return null;
@@ -7331,6 +7380,59 @@
       }
     }
     return null;
+  }
+
+  function graceFormatPhaseDisplayName(ph) {
+    var s = String(ph || "").trim();
+    if (!s) return "unknown";
+    return s.replace(/_/g, " ");
+  }
+
+  function graceBookmarkPickListLabel(entry) {
+    if (!entry || typeof entry.json !== "string") return "Invalid bookmark";
+    var ph = graceFormatPhaseDisplayName(entry.phase);
+    var pl = String(entry.player || "").trim() || "?";
+    var roundPart = "";
+    try {
+      var o = JSON.parse(entry.json);
+      if (o && o.round != null && String(o.round).trim() !== "") {
+        roundPart = "Round " + String(o.round) + " · ";
+      }
+    } catch (eR) {
+      /* ignore */
+    }
+    return roundPart + pl + " · " + ph;
+  }
+
+  function graceRenderBookmarkPickList(gs) {
+    var host = document.getElementById("risque-grace-host-bookmark-list");
+    if (!host) return;
+    host.innerHTML = "";
+    var arr = window.__risqueGraceCardplayStarts;
+    if (!Array.isArray(arr) || !arr.length) {
+      var empty = document.createElement("p");
+      empty.className = "risque-grace-host-bookmark-empty";
+      empty.textContent =
+        "No phase bookmarks in this session yet — play a short while so turns create history, or Undo may still work.";
+      host.appendChild(empty);
+      return;
+    }
+    var intro = document.createElement("p");
+    intro.className = "risque-grace-host-bookmark-intro";
+    intro.textContent =
+      "Newest at top. Pick any row to restore that exact board — reinforce, attack, deploy, card play, income, receive-card, etc. You are not forced back to card play unless you choose that row or shortcut 4.";
+    host.appendChild(intro);
+    var i;
+    for (i = arr.length - 1; i >= 0; i--) {
+      var e = arr[i];
+      if (!e || typeof e.json !== "string") continue;
+      var row = document.createElement("button");
+      row.type = "button";
+      row.className = "risque-grace-host-btn risque-grace-host-bookmark-row";
+      row.setAttribute("data-risque-grace-bookmark-idx", String(i));
+      row.textContent = graceBookmarkPickListLabel(e);
+      host.appendChild(row);
+    }
   }
 
   function getLastRoundAutosaveNumber() {
@@ -7704,12 +7806,65 @@
   window.risqueRoundAutosaveOnGameWin = function (gs) {
     if (!gs || window.risqueDisplayIsPublic) return Promise.resolve();
     if (gs.risqueAutosaveTier === "manual") {
-      try {
-        gs.risqueGameWinAutosaved = true;
-      } catch (eManWin) {
-        /* ignore */
+      if (gs.risqueGameWinAutosaved) return Promise.resolve();
+      if (typeof window.risqueReplayEnsureTapeSessionKey === "function") {
+        try {
+          window.risqueReplayEnsureTapeSessionKey(gs);
+        } catch (eSkM) {
+          /* ignore */
+        }
       }
-      return Promise.resolve();
+      if (typeof window.risqueReplayEnsureLatestBoardFrame === "function") {
+        try {
+          window.risqueReplayEnsureLatestBoardFrame(gs);
+        } catch (eLfM) {
+          /* ignore */
+        }
+      }
+      var forSaveM = gs;
+      try {
+        if (typeof window.risqueStripReplayFromGameStateClone === "function") {
+          forSaveM = window.risqueStripReplayFromGameStateClone(gs);
+        }
+      } catch (eStripM) {
+        forSaveM = gs;
+      }
+      var payloadM;
+      try {
+        payloadM = JSON.stringify(forSaveM, null, 2);
+      } catch (ePayM) {
+        try {
+          gs.risqueGameWinAutosaved = true;
+        } catch (eFlM) {
+          /* ignore */
+        }
+        return Promise.resolve();
+      }
+      var replayPackM = buildSplitSessionReplayPackForHost(gs);
+      var baseM = defaultRisqueSaveBasename() + " postgame";
+      return tryWriteSplitSaveToAutosaveFolder(gs, payloadM, replayPackM, baseM).then(function (fr) {
+        try {
+          gs.risqueGameWinAutosaved = true;
+        } catch (eDoneM) {
+          /* ignore */
+        }
+        if (typeof window.risqueStagingClearAfterRoundCommit === "function") {
+          window.risqueStagingClearAfterRoundCommit();
+        }
+        if (fr && fr.ok) {
+          try {
+            logEvent("Manual tier: auto-wrote endgame game + full session replay", {});
+          } catch (eLogM) {
+            /* ignore */
+          }
+        } else {
+          try {
+            logEvent("Manual tier: endgame folder write skipped (no folder or write failed)", {});
+          } catch (eLogM2) {
+            /* ignore */
+          }
+        }
+      });
     }
     if (gs.risqueGameWinAutosaved) return Promise.resolve();
     if (typeof window.risqueReplayEnsureTapeSessionKey === "function") {
@@ -7959,8 +8114,11 @@
       '<input type="radio" name="risque-autosave-tier" value="manual"' +
       chk("manual") +
       ">" +
-      '<span class="risque-ac-opt-text"><span class="risque-ac-opt-title">4 · No autosave</span>' +
-      "<span class=\"risque-ac-opt-desc\">No automatic turn or round saves. You control persistence with SAVE (game + full replay JSON) or EMERGENCY.</span></span>" +
+      '<span class="risque-ac-opt-text"><span class="risque-ac-opt-title">4 · Manual (minimal disk)</span>' +
+      "<span class=\"risque-ac-opt-desc\">" +
+        "Writes <code>DD.json</code> once after deal/deploy, then <strong>no</strong> per-turn replay/checkpoint files. " +
+        "<strong>SAVE + REPLAY</strong> writes stripped game + full-session replay; with a connected folder, both files go straight to disk (no dialogs). " +
+        "At <strong>game end</strong>, the same pair is written automatically when a folder is connected. Full tape stays in memory during play.</span></span>" +
       "</label></li>" +
       "</ul>" +
       '<div class="risque-ras-actions">' +
@@ -8265,6 +8423,12 @@
         : Promise.resolve(false);
     return diskChain
       .then(function () {
+        var checkpointP =
+          typeof window.risqueLocalDiskTryApplyPeriodicRestartCheckpoint === "function"
+            ? window.risqueLocalDiskTryApplyPeriodicRestartCheckpoint()
+            : Promise.resolve(false);
+        return checkpointP.then(function (didNav) {
+          if (didNav) return null;
         if (typeof window.risqueLocalDiskIsActive === "function" && window.risqueLocalDiskIsActive()) {
           try {
             setBoardCornerMsg("Autosave: launcher paths → flat folder (default C:\\risque\\save).");
@@ -8347,6 +8511,7 @@
             }
             return h;
           });
+        });
       })
       .catch(function () {
         return null;
@@ -10021,6 +10186,38 @@
     document.addEventListener("pointerdown", onFirstPointer, true);
   }
 
+  function risqueClearWaybackGreenBadgeHideTimer() {
+    if (__risqueWaybackGreenBadgeHideTimer != null) {
+      window.clearTimeout(__risqueWaybackGreenBadgeHideTimer);
+      __risqueWaybackGreenBadgeHideTimer = null;
+    }
+  }
+
+  /** One shot per green badge element: repeated sync calls must not reset the 2s timer. */
+  function risqueScheduleWaybackGreenBadgeHideOnce(flag) {
+    if (!flag || flag.getAttribute("data-risque-green-hide-pending") === "1") return;
+    flag.setAttribute("data-risque-green-hide-pending", "1");
+    risqueClearWaybackGreenBadgeHideTimer();
+    __risqueWaybackGreenBadgeHideTimer = window.setTimeout(function () {
+      __risqueWaybackGreenBadgeHideTimer = null;
+      __risqueWaybackGreenLoginBadgeConsumed = true;
+      try {
+        flag.removeAttribute("data-risque-green-hide-pending");
+      } catch (eAttr) {
+        /* ignore */
+      }
+      try {
+        if (flag && flag.parentNode) flag.parentNode.removeChild(flag);
+      } catch (eRm) {
+        try {
+          flag.remove();
+        } catch (eRm2) {
+          /* ignore */
+        }
+      }
+    }, SHOW_WAYBACK_GREEN_BADGE_MS);
+  }
+
   function syncWaybackConnectedLoginFlag(gs) {
     function applyWaybackConnFlag(el, connected, reason) {
       if (!el) return;
@@ -10029,7 +10226,15 @@
         el.style.background = "#14532d";
         el.style.color = "#ecfdf5";
         el.style.border = "1px solid #22c55e";
+        risqueScheduleWaybackGreenBadgeHideOnce(el);
       } else {
+        risqueClearWaybackGreenBadgeHideTimer();
+        __risqueWaybackGreenLoginBadgeConsumed = false;
+        try {
+          el.removeAttribute("data-risque-green-hide-pending");
+        } catch (eP) {
+          /* ignore */
+        }
         el.textContent = "SAVE FOLDER NOT CONNECTED (" + reason + ")";
         el.style.background = "#713f12";
         el.style.color = "#fffbeb";
@@ -10071,6 +10276,8 @@
       /* ignore */
     }
     if (isHost && urlPhase && urlPhase !== "login") {
+      risqueClearWaybackGreenBadgeHideTimer();
+      __risqueWaybackGreenLoginBadgeConsumed = false;
       if (old && old.parentNode) old.parentNode.removeChild(old);
       return;
     }
@@ -10180,6 +10387,13 @@
       }
     }
     if (!isHost || !isLogin) {
+      risqueClearWaybackGreenBadgeHideTimer();
+      __risqueWaybackGreenLoginBadgeConsumed = false;
+      if (old && old.parentNode) old.parentNode.removeChild(old);
+      return;
+    }
+    if (connected && __risqueWaybackGreenLoginBadgeConsumed) {
+      risqueClearWaybackGreenBadgeHideTimer();
       if (old && old.parentNode) old.parentNode.removeChild(old);
       return;
     }
@@ -10418,6 +10632,134 @@
     }
   }
 
+  /** Full-session replay pack for SAVE + REPLAY / manual endgame export (deal → now in memory). */
+  function buildSplitSessionReplayPackForHost(gameStateObj) {
+    var replayPack = null;
+    function buildSessionPackFromSource(src) {
+      if (!src || typeof src !== "object") return null;
+      try {
+        if (typeof window.risqueReplayEnsureLatestBoardFrame === "function") {
+          window.risqueReplayEnsureLatestBoardFrame(src);
+        }
+      } catch (eLfSrc) {
+        /* ignore */
+      }
+      try {
+        return typeof window.risqueBuildSessionReplayExport === "function"
+          ? window.risqueBuildSessionReplayExport(src)
+          : null;
+      } catch (eSessSrc) {
+        return null;
+      }
+    }
+    function sessionPackEventCount(pack) {
+      if (!pack || !pack.tape || !Array.isArray(pack.tape.events)) return 0;
+      return pack.tape.events.length;
+    }
+    try {
+      replayPack = buildSessionPackFromSource(gameStateObj);
+      var liveGs = typeof window.gameState === "object" && window.gameState ? window.gameState : null;
+      if (liveGs && liveGs !== gameStateObj) {
+        var livePack = buildSessionPackFromSource(liveGs);
+        if (sessionPackEventCount(livePack) > sessionPackEventCount(replayPack)) {
+          replayPack = livePack;
+        }
+      }
+      if (
+        sessionPackEventCount(replayPack) < 8 &&
+        typeof window.risqueReplayRestoreFromSidecar === "function" &&
+        gameStateObj &&
+        typeof gameStateObj === "object"
+      ) {
+        try {
+          window.risqueReplayRestoreFromSidecar(gameStateObj);
+        } catch (eSide) {
+          /* ignore */
+        }
+        var sidePack = buildSessionPackFromSource(gameStateObj);
+        if (sessionPackEventCount(sidePack) > sessionPackEventCount(replayPack)) {
+          replayPack = sidePack;
+        }
+      }
+    } catch (eSess) {
+      replayPack = null;
+    }
+    if (
+      !replayPack ||
+      replayPack.format !== "risque-replay-v1" ||
+      !replayPack.tape ||
+      !Array.isArray(replayPack.tape.events) ||
+      !replayPack.tape.events.length
+    ) {
+      replayPack = null;
+    }
+    if (!replayPack) {
+      try {
+        var bootRaw = localStorage.getItem("risqueWaybackBootstrapPack");
+        var bootParsed = bootRaw ? JSON.parse(String(bootRaw)) : null;
+        if (
+          bootParsed &&
+          bootParsed.format === "risque-replay-v1" &&
+          bootParsed.tape &&
+          Array.isArray(bootParsed.tape.events) &&
+          bootParsed.tape.events.length
+        ) {
+          replayPack = bootParsed;
+        }
+      } catch (eBoot) {
+        /* ignore */
+      }
+    }
+    return replayPack;
+  }
+
+  /**
+   * When a save folder is connected, write stripped game JSON + full replay next to it (no Save dialog).
+   * Returns { ok, usedPicker, replayWritten } or null if not attempted / not possible.
+   */
+  function tryWriteSplitSaveToAutosaveFolder(gameStateObj, payload, replayPack, defaultBase) {
+    if (!replayPack || replayPack.format !== "risque-replay-v1") {
+      return Promise.resolve(null);
+    }
+    if (!hasRoundAutosaveDiskTarget()) return Promise.resolve(null);
+    var wf = typeof window.risqueSessionDiskWriteTextFile === "function" ? window.risqueSessionDiskWriteTextFile : null;
+    if (!wf || typeof window.risqueSessionDiskEnsureGameDirHandle !== "function") {
+      return Promise.resolve(null);
+    }
+    var replayJson;
+    try {
+      replayJson = JSON.stringify(replayPack, null, 2);
+    } catch (eJ) {
+      return Promise.resolve(null);
+    }
+    return Promise.all([
+      window.risqueSessionDiskEnsureGameDirHandle(gameStateObj),
+      window.risqueSessionDiskEnsureReplayDirHandle(gameStateObj)
+    ]).then(function (pair) {
+      if (!pair[0] || !pair[1]) return null;
+      var base = risqueSaveBasenameForFilename(defaultBase);
+      var gameF = base + ".json";
+      var repF = base + "-replay.json";
+      return wf(pair[0], gameF, payload).then(function (ok1) {
+        if (!ok1) return null;
+        return wf(pair[1], repF, replayJson).then(function (ok2) {
+          if (!ok2) return null;
+          try {
+            setBoardCornerMsg("Wrote " + gameF + " + " + repF + " to your save folder.");
+          } catch (eMsgF) {
+            /* ignore */
+          }
+          try {
+            logEvent("Save folder: game + session replay", { game: gameF, replay: repF });
+          } catch (eLogF) {
+            /* ignore */
+          }
+          return { ok: true, usedPicker: false, replayWritten: true };
+        });
+      });
+    });
+  }
+
   /**
    * Host save to disk: native Save dialog when showSaveFilePicker exists (e.g. localhost / https).
    * If the host already granted a save folder (round autosave / Wayback Connect), startIn uses that
@@ -10449,82 +10791,7 @@
     var payload = JSON.stringify(forSave, null, 2);
     var replayPack = null;
     if (splitSessionReplayFiles) {
-      function buildSessionPackFromSource(src) {
-        if (!src || typeof src !== "object") return null;
-        try {
-          if (typeof window.risqueReplayEnsureLatestBoardFrame === "function") {
-            window.risqueReplayEnsureLatestBoardFrame(src);
-          }
-        } catch (eLfSrc) {
-          /* ignore */
-        }
-        try {
-          return typeof window.risqueBuildSessionReplayExport === "function"
-            ? window.risqueBuildSessionReplayExport(src)
-            : null;
-        } catch (eSessSrc) {
-          return null;
-        }
-      }
-      function sessionPackEventCount(pack) {
-        if (!pack || !pack.tape || !Array.isArray(pack.tape.events)) return 0;
-        return pack.tape.events.length;
-      }
-      try {
-        replayPack = buildSessionPackFromSource(gameStateObj);
-        var liveGs = typeof window.gameState === "object" && window.gameState ? window.gameState : null;
-        if (liveGs && liveGs !== gameStateObj) {
-          var livePack = buildSessionPackFromSource(liveGs);
-          if (sessionPackEventCount(livePack) > sessionPackEventCount(replayPack)) {
-            replayPack = livePack;
-          }
-        }
-        /* If the active object lacks replay buckets (e.g., transient stripped source), restore then retry. */
-        if (
-          sessionPackEventCount(replayPack) < 8 &&
-          typeof window.risqueReplayRestoreFromSidecar === "function" &&
-          gameStateObj &&
-          typeof gameStateObj === "object"
-        ) {
-          try {
-            window.risqueReplayRestoreFromSidecar(gameStateObj);
-          } catch (eSide) {
-            /* ignore */
-          }
-          var sidePack = buildSessionPackFromSource(gameStateObj);
-          if (sessionPackEventCount(sidePack) > sessionPackEventCount(replayPack)) {
-            replayPack = sidePack;
-          }
-        }
-      } catch (eSess) {
-        replayPack = null;
-      }
-      if (
-        !replayPack ||
-        replayPack.format !== "risque-replay-v1" ||
-        !replayPack.tape ||
-        !Array.isArray(replayPack.tape.events) ||
-        !replayPack.tape.events.length
-      ) {
-        replayPack = null;
-      }
-      if (!replayPack) {
-        try {
-          var bootRaw = localStorage.getItem("risqueWaybackBootstrapPack");
-          var bootParsed = bootRaw ? JSON.parse(String(bootRaw)) : null;
-          if (
-            bootParsed &&
-            bootParsed.format === "risque-replay-v1" &&
-            bootParsed.tape &&
-            Array.isArray(bootParsed.tape.events) &&
-            bootParsed.tape.events.length
-          ) {
-            replayPack = bootParsed;
-          }
-        } catch (eBoot) {
-          /* ignore */
-        }
-      }
+      replayPack = buildSplitSessionReplayPackForHost(gameStateObj);
     } else if (!includeReplayInMainJson) {
       try {
         replayPack =
@@ -10609,64 +10876,74 @@
 
     var _pickerStart = savePickerStartIn();
 
-    return window
-      .showSaveFilePicker({
-        suggestedName: suggestedFile,
-        startIn: _pickerStart,
-        types: [
-          {
-            description: "RISQUE saved game",
-            accept: { "application/json": [".json"] }
-          }
-        ]
-      })
-      .then(function (handle) {
-        return handle.createWritable().then(function (writable) {
-          var w = writable.write(payload);
-          return Promise.resolve(w).then(function () {
-            return writable.close();
-          });
-        });
-      })
-      .then(function () {
-        if (includeReplayInMainJson) {
-          return { ok: true, usedPicker: true, replayWritten: true };
-        }
-        if (!replayPack || replayPack.format !== "risque-replay-v1") {
-          return { ok: true, usedPicker: true, replayWritten: false };
-        }
-        return window
-          .showSaveFilePicker({
-            suggestedName: replaySuggestedName,
-            startIn: _pickerStart,
-            types: [
-              {
-                description: "RISQUE replay tape",
-                accept: { "application/json": [".json"] }
-              }
-            ]
-          })
-          .then(function (h2) {
-            return h2.createWritable().then(function (writable2) {
-              var w2 = writable2.write(JSON.stringify(replayPack, null, 2));
-              return Promise.resolve(w2).then(function () {
-                return writable2.close();
-              });
+    function runShowSavePickerSplit() {
+      return window
+        .showSaveFilePicker({
+          suggestedName: suggestedFile,
+          startIn: _pickerStart,
+          types: [
+            {
+              description: "RISQUE saved game",
+              accept: { "application/json": [".json"] }
+            }
+          ]
+        })
+        .then(function (handle) {
+          return handle.createWritable().then(function (writable) {
+            var w = writable.write(payload);
+            return Promise.resolve(w).then(function () {
+              return writable.close();
             });
-          })
-          .then(function () {
-            return { ok: true, usedPicker: true, replayWritten: true };
-          })
-          .catch(function () {
-            return { ok: true, usedPicker: true, replayWritten: false };
           });
-      })
-      .catch(function (ePick) {
-        if (ePick && ePick.name === "AbortError") {
-          return { ok: false, aborted: true };
-        }
-        return promptThenDownload();
+        })
+        .then(function () {
+          if (includeReplayInMainJson) {
+            return { ok: true, usedPicker: true, replayWritten: true };
+          }
+          if (!replayPack || replayPack.format !== "risque-replay-v1") {
+            return { ok: true, usedPicker: true, replayWritten: false };
+          }
+          return window
+            .showSaveFilePicker({
+              suggestedName: replaySuggestedName,
+              startIn: _pickerStart,
+              types: [
+                {
+                  description: "RISQUE replay tape",
+                  accept: { "application/json": [".json"] }
+                }
+              ]
+            })
+            .then(function (h2) {
+              return h2.createWritable().then(function (writable2) {
+                var w2 = writable2.write(JSON.stringify(replayPack, null, 2));
+                return Promise.resolve(w2).then(function () {
+                  return writable2.close();
+                });
+              });
+            })
+            .then(function () {
+              return { ok: true, usedPicker: true, replayWritten: true };
+            })
+            .catch(function () {
+              return { ok: true, usedPicker: true, replayWritten: false };
+            });
+        })
+        .catch(function (ePick) {
+          if (ePick && ePick.name === "AbortError") {
+            return { ok: false, aborted: true };
+          }
+          return promptThenDownload();
+        });
+    }
+
+    if (splitSessionReplayFiles && hasRoundAutosaveDiskTarget()) {
+      return tryWriteSplitSaveToAutosaveFolder(gameStateObj, payload, replayPack, defaultBase).then(function (fr) {
+        if (fr && fr.ok) return fr;
+        return runShowSavePickerSplit();
       });
+    }
+    return runShowSavePickerSplit();
   }
 
   function downloadLedger() {
@@ -10728,7 +11005,7 @@
               setBoardCornerMsg(
                 res.usedPicker
                   ? "Saved game JSON + full session replay (deal→now)."
-                  : "Saved game + replay files — check Downloads if the browser did not show both dialogs."
+                  : "Saved game + session replay to your connected save folder (no Save dialogs)."
               );
             } else {
               setBoardCornerMsg(
@@ -10776,7 +11053,7 @@
             setBoardCornerMsg(
               res.usedPicker
                 ? "Saved game JSON + full session replay (deal→now)."
-                : "Saved game + replay files — check Downloads."
+                : "Saved game + session replay to your connected save folder (no Save dialogs)."
             );
           } else {
             setBoardCornerMsg(
@@ -10841,7 +11118,7 @@
       case "safe_no_replay":
         return "Autosave · Game only";
       case "manual":
-        return "Save · Manual";
+        return "Autosave · Minimal disk";
       default:
         return BOARD_AUTOSAVE_CONFIG_LABEL;
     }
@@ -10931,12 +11208,14 @@
     "</div>" +
     '<div id="risque-grace-host-screen-pick" class="risque-grace-host-screen" hidden>' +
     '<p class="risque-grace-host-title">Grace rollback</p>' +
-    '<p class="risque-grace-host-desc">Rewind to a saved bookmark from this session. Undo uses the last write before your latest change (same tab).</p>' +
+    '<p class="risque-grace-host-desc">Shortcuts below, or scroll the full list — every phase bookmark this session (newest first). Pick any row; you are not forced back to card play unless you choose it. Shortcut 3 skips income / receive-card for a quick main-loop jump. Undo uses the last write before your latest change (same tab).</p>' +
     '<p id="risque-grace-host-pick-warn" class="risque-grace-host-pick-warn" hidden></p>' +
     '<button type="button" class="risque-grace-host-btn risque-grace-host-btn--primary" id="risque-grace-host-opt-undo" disabled>1) Undo last save</button>' +
     '<button type="button" class="risque-grace-host-btn risque-grace-host-btn--primary" id="risque-grace-host-opt-phase-start" disabled>2) Start of this phase</button>' +
-    '<button type="button" class="risque-grace-host-btn risque-grace-host-btn--primary" id="risque-grace-host-opt-prev-phase" disabled>3) End of previous phase</button>' +
+    '<button type="button" class="risque-grace-host-btn risque-grace-host-btn--primary" id="risque-grace-host-opt-prev-phase" disabled>3) Last main phase (reinforce / attack / deploy / card play)</button>' +
     '<button type="button" class="risque-grace-host-btn risque-grace-host-btn--primary" id="risque-grace-host-opt-cycle" disabled>4) Start of turn (cardplay)</button>' +
+    '<p class="risque-grace-host-bookmark-heading">All bookmarks — pick any</p>' +
+    '<div id="risque-grace-host-bookmark-list" class="risque-grace-host-bookmark-list" role="list"></div>' +
     '<button type="button" class="risque-grace-host-btn" id="risque-grace-host-pick-cancel">Cancel</button>' +
     "</div>" +
     '<div id="risque-grace-host-screen-confirm" class="risque-grace-host-screen" hidden>' +
@@ -10957,7 +11236,8 @@
         !document.getElementById("risque-grace-host-opt-undo") ||
         !document.getElementById("risque-grace-host-opt-phase-start") ||
         !document.getElementById("risque-grace-host-opt-prev-phase") ||
-        !document.getElementById("risque-grace-host-opt-cycle"))
+        !document.getElementById("risque-grace-host-opt-cycle") ||
+        !document.getElementById("risque-grace-host-bookmark-list"))
     ) {
       existing.parentNode.removeChild(existing);
       existing = null;
@@ -11003,9 +11283,13 @@
         !__risqueGracePickJsonPhaseStart &&
         !__risqueGracePickJsonPrevPhase &&
         !__risqueGracePickJsonCycle;
-      if (noArr || noSnap) {
+      if (noArr) {
         warn.textContent =
           "No Grace bookmarks yet for this session — play a few moments, or reload may clear Undo until the next save.";
+        warn.hidden = false;
+      } else if (noSnap) {
+        warn.textContent =
+          "Some shortcuts are unavailable — use the scroll list below to pick any saved point.";
         warn.hidden = false;
       } else {
         warn.textContent = "";
@@ -11056,8 +11340,11 @@
     var pick = document.getElementById("risque-grace-host-screen-pick");
     if (pick) pick.hidden = false;
     graceUpdatePickScreenButtonsAndWarn();
-    if (!arr.length || (!j0 && !jPs && !jPrev && !j3)) {
-      logEvent("Grace: opened panel (no usable snapshots)");
+    graceRenderBookmarkPickList(gs);
+    if (!arr.length) {
+      logEvent("Grace: opened panel (no bookmarks yet)");
+    } else if (!j0 && !jPs && !jPrev && !j3) {
+      logEvent("Grace: opened panel (bookmark list only)");
     } else {
       logEvent("Grace: opened rollback options panel");
     }
@@ -11084,6 +11371,7 @@
     var pick = document.getElementById("risque-grace-host-screen-pick");
     if (pick) pick.hidden = false;
     graceUpdatePickScreenButtonsAndWarn();
+    graceRenderBookmarkPickList(getActiveGameStateSnapshot());
   }
 
   function graceExecuteRollback(jsonStr, snapIndex) {
@@ -11146,7 +11434,27 @@
       var t = ev.target;
       if (!t || !t.closest) return;
       var btn = t.closest("button");
-      if (!btn || !btn.id) return;
+      if (!btn) return;
+      var bmAttr = btn.getAttribute("data-risque-grace-bookmark-idx");
+      if (bmAttr != null && bmAttr !== "") {
+        if (btn.disabled) return;
+        var ix = parseInt(bmAttr, 10);
+        if (!Number.isFinite(ix) || ix < 0) return;
+        var arrBm = window.__risqueGraceCardplayStarts;
+        if (!Array.isArray(arrBm) || ix >= arrBm.length) return;
+        var ent = arrBm[ix];
+        if (!ent || typeof ent.json !== "string") return;
+        var rowLabel = graceBookmarkPickListLabel(ent);
+        graceShowConfirmScreen(
+          "Restore the table to this saved point: " +
+            rowLabel +
+            ". Newer bookmarks are removed from Grace history until new play adds more.",
+          ent.json,
+          ix
+        );
+        return;
+      }
+      if (!btn.id) return;
       var id = btn.id;
       if (id === "risque-grace-host-kidding-close" || id === "risque-grace-host-pick-cancel") {
         closeGraceHostRollbackFlow();
@@ -11176,7 +11484,7 @@
         if (t.disabled) return;
         if (!__risqueGracePickJsonPrevPhase) return;
         graceShowConfirmScreen(
-          "Jump back to the end of the previous phase — the board state from before you entered this phase (e.g. after attack, before reinforce).",
+          "Rewind to the last bookmark in the main loop — reinforcement, attack, deployment, or card play. Skips income, receive-card / draw steps, and conquest-only handoff phases so the table can redo real decisions.",
           __risqueGracePickJsonPrevPhase,
           __risqueGracePickIndexPrevPhase
         );

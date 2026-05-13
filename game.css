@@ -773,6 +773,20 @@ html.risque-public-wayback-mirror.risque-view-public .risque-public-wayback-roun
   text-shadow: 0 0 20px rgba(250, 204, 21, 0.35);
 }
 
+html.risque-public-wayback-mirror.risque-view-public .risque-public-wayback-actor {
+  font-size: clamp(15px, 1.9vw, 22px);
+  font-weight: 700;
+  color: #f1f5f9;
+  text-align: center;
+  line-height: 1.25;
+  max-width: 100%;
+  padding: 0 8px;
+}
+
+html.risque-public-wayback-mirror.risque-view-public .risque-public-wayback-actor[hidden] {
+  display: none !important;
+}
+
 html.risque-public-wayback-mirror.risque-view-public #risque-main-panel-body {
   padding-top: 4px;
 }
@@ -10087,6 +10101,48 @@ html.risque-view-host .risque-grace-host-btn--danger {
   background: #7f1d1d;
   color: #fecaca;
   border-color: #450a0a;
+}
+
+html.risque-view-host .risque-grace-host-bookmark-heading {
+  margin: 10px 0 0 0;
+  font: 800 12px/1.3 "Segoe UI", Arial, sans-serif;
+  color: #86efac;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  text-align: center;
+}
+html.risque-view-host .risque-grace-host-bookmark-list {
+  max-height: min(42vh, 340px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 4px;
+  margin: 0 0 10px 0;
+  border: 1px solid rgba(0, 255, 0, 0.35);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.88);
+}
+html.risque-view-host .risque-grace-host-btn.risque-grace-host-bookmark-row {
+  text-transform: none;
+  text-align: left;
+  font: 700 13px/1.25 "Segoe UI", Arial, sans-serif;
+  letter-spacing: 0.02em;
+  justify-content: flex-start;
+  white-space: normal;
+}
+html.risque-view-host .risque-grace-host-bookmark-empty {
+  margin: 0;
+  font: 700 13px/1.35 Arial, sans-serif;
+  color: #94a3b8;
+  text-align: center;
+  padding: 12px 8px;
+}
+html.risque-view-host .risque-grace-host-bookmark-intro {
+  margin: 0 0 8px 0;
+  font: 700 12px/1.35 Arial, sans-serif;
+  color: #bbf7d0;
 }
 
 /* Replay machine (replay-machine.html): Wayback UI uses the same host control panel chrome

@@ -288,6 +288,7 @@
       delete disk.risqueCardplayPublicMirrorSnapshot;
       delete disk.risquePublicCardplayRecap;
       delete disk.risquePublicCardplayRecapAckRequiredSeq;
+      delete disk.risquePublicCardplayAerialSkipHostDecisionSeq;
       delete disk.risqueCardplayTvRecapPublished;
       disk.risqueCardplaySuppressPublicSpectator = false;
     }
@@ -393,6 +394,31 @@
       if (played === "wildcard1") return "wildcard2";
       if (played === "wildcard2") return "wildcard1";
       return "";
+    }
+
+    /**
+     * Skip host/TV aerial counter confirmation only when it cannot leak hidden info:
+     * (1) attacker held both wildcards when choosing aerial (risqueAerialSkipCounterGate on the play), or
+     * (2) the counter wildcard is already in the public discard pile (was played earlier).
+     * We must NOT skip just because no opponent currently holds the counter — that would reveal it is not in hand.
+     */
+    function cardplayDiscardPileContainsWildcard(gs, wildcardName) {
+      if (!gs || !Array.isArray(gs.discardPile)) return false;
+      var w = String(wildcardName || "").toLowerCase();
+      var i;
+      for (i = 0; i < gs.discardPile.length; i += 1) {
+        if (String(gs.discardPile[i] || "").toLowerCase() === w) return true;
+      }
+      return false;
+    }
+
+    function cardplayPendingAerialMaySkipHostCounterGate() {
+      var pending = cardplayFindPendingAerialAction();
+      if (!pending || !pending.action) return false;
+      if (pending.action.risqueAerialSkipCounterGate === true) return true;
+      var req = cardplayRequiredCounterWildcardForPendingAerial();
+      if (!req || !window.gameState) return false;
+      return cardplayDiscardPileContainsWildcard(window.gameState, req);
     }
 
     function cardplayGetAerialDecisionForReqSeq(reqSeq) {
@@ -578,15 +604,20 @@
       if (req == null || req === "") return true;
       var pendingAerial = cardplayFindPendingAerialAction();
       if (pendingAerial) {
-        try {
-          var rawDec = localStorage.getItem(AERIAL_COUNTER_DECISION_KEY);
-          if (!rawDec) return false;
-          var d = JSON.parse(rawDec);
-          if (Number(d.seq) !== Number(req)) return false;
-          var choice = String((d && d.choice) || "");
-          if (choice !== "confirmed" && choice !== "countered") return false;
-        } catch (eDec) {
-          return false;
+        var skipAerialHost =
+          window.gameState &&
+          Number(window.gameState.risquePublicCardplayAerialSkipHostDecisionSeq) === Number(req);
+        if (!skipAerialHost) {
+          try {
+            var rawDec = localStorage.getItem(AERIAL_COUNTER_DECISION_KEY);
+            if (!rawDec) return false;
+            var d = JSON.parse(rawDec);
+            if (Number(d.seq) !== Number(req)) return false;
+            var choice = String((d && d.choice) || "");
+            if (choice !== "confirmed" && choice !== "countered") return false;
+          } catch (eDec) {
+            return false;
+          }
         }
       }
       try {
@@ -1178,9 +1209,14 @@
       var dec = cardplayGetAerialDecisionForReqSeq(reqSeq);
       var aerialReady = cardplayIsAerialDecisionReady(reqSeq);
       var decisionButtonsEnabled = !!aerialReady;
+      var skipAerialHostUi =
+        window.gameState &&
+        reqSeq != null &&
+        Number(window.gameState.risquePublicCardplayAerialSkipHostDecisionSeq) === Number(reqSeq);
       var showAerialDecisionUi =
         pendingAerial &&
         needAck &&
+        !skipAerialHostUi &&
         !(dec && (dec.choice === "confirmed" || dec.choice === "countered")) &&
         aerialReady;
       if (aerialWrap) {
@@ -1223,7 +1259,7 @@
       if (autoMsg) {
         autoMsg.textContent = ackOk
           ? "Card processing complete. Moving to income..."
-          : pendingAerial && needAck && !aerialReady
+          : pendingAerial && needAck && !skipAerialHostUi && !aerialReady
             ? "Waiting for wildcard recap before aerial decision."
           : !publicDone
             ? "Waiting for card processing recap to finish."
@@ -1382,6 +1418,7 @@
         delete gs.risqueCardplayTvRecapPublished;
         delete gs.risquePublicCardplayRecap;
         delete gs.risquePublicCardplayRecapAckRequiredSeq;
+        delete gs.risquePublicCardplayAerialSkipHostDecisionSeq;
       }
     }
 
@@ -2703,7 +2740,16 @@
           window.gameState.aerialAttackEligible = true;
         }
         window.gameState.aerialAttack = false;
-        const playedCardData = { cards: [{ card, id: cardId }], action: 'aerial_attack', confirmed: false };
+        var cLow = String(card || "").toLowerCase();
+        var otherWild = cLow === "wildcard1" ? "wildcard2" : cLow === "wildcard2" ? "wildcard1" : "";
+        var hadBothWildsForAerial =
+          !!otherWild && cardplayPlayerHasSpecificWildcard(currentPlayer.name, otherWild);
+        const playedCardData = {
+          cards: [{ card, id: cardId }],
+          action: "aerial_attack",
+          confirmed: false,
+          risqueAerialSkipCounterGate: !!hadBothWildsForAerial
+        };
         playedCards.push(playedCardData);
         removeCardFromHandAndDiscard(currentPlayer, cardId, card);
         const cardElement = document.querySelector(`.card[data-card="${card}"][data-id="${cardId}"]`);
@@ -3356,6 +3402,7 @@
       window.gameState.aerialAttack = false;
       delete window.gameState.risquePublicCardplayRecap;
       delete window.gameState.risquePublicCardplayRecapAckRequiredSeq;
+      delete window.gameState.risquePublicCardplayAerialSkipHostDecisionSeq;
       delete window.gameState.risqueCardplayTvRecapPublished;
       window.gameState.risqueCardplaySuppressPublicSpectator = true;
       window.__risqueCardplayHostIncomeOnly = false;
@@ -3673,7 +3720,14 @@
           var hasAerialStep = proc.steps.some(function (st) {
             return st && String(st.effect || "") === "aerial_attack";
           });
-          if (hasAerialStep) {
+          var aerialSkipHostDecision =
+            hasAerialStep && cardplayPendingAerialMaySkipHostCounterGate();
+          if (aerialSkipHostDecision) {
+            window.gameState.risquePublicCardplayAerialSkipHostDecisionSeq = nextSeq;
+          } else {
+            delete window.gameState.risquePublicCardplayAerialSkipHostDecisionSeq;
+          }
+          if (hasAerialStep && !aerialSkipHostDecision) {
             try {
               localStorage.setItem(
                 AERIAL_DECISION_READY_KEY,
@@ -3683,7 +3737,11 @@
               /* ignore */
             }
           }
+        } else {
+          delete window.gameState.risquePublicCardplayAerialSkipHostDecisionSeq;
         }
+      } else {
+        delete window.gameState.risquePublicCardplayAerialSkipHostDecisionSeq;
       }
       window.gameState.risqueCardplayTvRecapPublished = true;
       if (typeof window.risqueMirrorPushGameState === "function") {
@@ -3770,6 +3828,7 @@
         delete window.gameState.risquePublicCardplayRecap;
         delete window.gameState.risqueCardplayTvRecapPublished;
         delete window.gameState.risquePublicCardplayRecapAckRequiredSeq;
+        delete window.gameState.risquePublicCardplayAerialSkipHostDecisionSeq;
       } catch (eSk) {}
       proceedCardplayToIncome(0);
     }

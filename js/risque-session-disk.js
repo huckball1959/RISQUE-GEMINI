@@ -420,6 +420,15 @@
 
   window.risqueSessionDiskWriteTurnCheckpoint = function (snap, prevPlayerName) {
     if (!snap || window.risqueDisplayIsPublic) return Promise.resolve(false);
+    var liveGsTier =
+      typeof window.gameState === "object" && window.gameState && window.gameState.risqueAutosaveTier != null
+        ? String(window.gameState.risqueAutosaveTier)
+        : snap.risqueAutosaveTier != null
+          ? String(snap.risqueAutosaveTier)
+          : "";
+    if (liveGsTier === "manual") {
+      return Promise.resolve(false);
+    }
     if (
       typeof window.risqueSessionDiskHasWritableSaveTarget === "function" &&
       !window.risqueSessionDiskHasWritableSaveTarget()
@@ -790,6 +799,14 @@
    */
   window.risqueSessionDiskFlushReplayAfterGameWin = function (gs) {
     if (!gs || window.risqueDisplayIsPublic) return Promise.resolve(false);
+    if (String(gs.risqueAutosaveTier || "") === "manual") {
+      try {
+        delete gs.risqueReplayGameWinDiskFlush;
+      } catch (eManFlush) {
+        /* ignore */
+      }
+      return Promise.resolve(false);
+    }
     var meta = gs.risqueReplayGameWinDiskFlush;
     if (!meta || !Array.isArray(meta.turnOrderBefore) || meta.turnOrderBefore.length < 2) {
       return Promise.resolve(false);
