@@ -142,6 +142,36 @@
       return gameState;
     }
 
+    /** Never throw — phase navigation must continue even when localStorage is full. */
+    function persistGameStateSafe(gs) {
+      var payload = sanitizeGameState(gs);
+      if (typeof window.risquePersistGameStateForNavigation === "function") {
+        return window.risquePersistGameStateForNavigation(payload);
+      }
+      if (typeof window.risqueSaveGameState === "function") {
+        try {
+          return !!window.risqueSaveGameState(payload);
+        } catch (eSave) {
+          console.warn("[Income] risqueSaveGameState failed", eSave);
+          return false;
+        }
+      }
+      try {
+        var json =
+          typeof window.risqueJsonStringifyGameStateForStorage === "function"
+            ? window.risqueJsonStringifyGameStateForStorage(payload)
+            : JSON.stringify(payload);
+        if (typeof window.risqueTryWriteLocalStorageWithQuotaFallback === "function") {
+          return window.risqueTryWriteLocalStorageWithQuotaFallback("gameState", json);
+        }
+        localStorage.setItem("gameState", json);
+        return true;
+      } catch (eLs) {
+        console.warn("[Income] gameState persist failed (continuing in memory)", eLs);
+        return false;
+      }
+    }
+
     function ensureContinentCollectionCounts(gameState) {
       if (!gameState.continentCollectionCounts) {
         gameState.continentCollectionCounts = {
@@ -1061,13 +1091,20 @@
             }
             gameState.bookPlayedThisTurn = false;
             currentPlayer.bookValue = 0;
-            localStorage.setItem("gameState", JSON.stringify(sanitizeGameState(gameState)));
+            gameState.phase = "income";
+            var persisted = persistGameStateSafe(gameState);
             logToStorage("Game state updated after income", {
               bankValue: currentPlayer.bankValue,
               phase: gameState.phase,
               bookPlayedThisTurn: gameState.bookPlayedThisTurn,
-              bookValue: currentPlayer.bookValue
+              bookValue: currentPlayer.bookValue,
+              persistedToLocalStorage: persisted
             });
+            if (!persisted && window.gameUtils && typeof window.gameUtils.showError === "function") {
+              window.gameUtils.showError(
+                "Storage full — continuing to deploy with in-memory state. Use SAVE to disk or clear site data."
+              );
+            }
             if (uiOverlay) uiOverlay.classList.remove("fade-out");
             setTimeout(function () {
               var dest = legacyNext;

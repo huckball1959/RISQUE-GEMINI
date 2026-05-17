@@ -1277,6 +1277,15 @@
     var uiOverlay = document.getElementById("ui-overlay");
     if (!uiOverlay || !window.gameUtils) return;
 
+    if (typeof window.risqueRestoreHostMapCanvasFromPhaseArtifacts === "function") {
+      window.risqueRestoreHostMapCanvasFromPhaseArtifacts();
+    }
+    try {
+      delete window.__risqueSuppressHostMapRedraw;
+    } catch (eSupRc) {
+      /* ignore */
+    }
+
     var conquestElim = false;
     try {
       conquestElim = new URLSearchParams(window.location.search).get("conquestElim") === "1";
@@ -1413,13 +1422,17 @@
       window.initReceiveCardPhase();
     }
 
-    requestAnimationFrame(function () {
-      window.gameUtils.resizeCanvas();
-      if (window.gameState) {
-        window.gameUtils.renderTerritories(null, window.gameState);
-        window.gameUtils.renderStats(window.gameState);
-      }
-    });
+    if (typeof window.risqueRepaintHostMapSoon === "function" && window.gameState) {
+      window.risqueRepaintHostMapSoon(window.gameState);
+    } else {
+      requestAnimationFrame(function () {
+        window.gameUtils.resizeCanvas();
+        if (window.gameState) {
+          window.gameUtils.renderTerritories(null, window.gameState);
+          window.gameUtils.renderStats(window.gameState);
+        }
+      });
+    }
   }
 
   window.risquePhases = window.risquePhases || {};

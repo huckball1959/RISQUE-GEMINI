@@ -380,6 +380,79 @@
     }
   }
   window.risqueClearPostReceiveNavigationArtifacts = clearPostReceiveNavigationArtifacts;
+
+  /**
+   * Host map recovery: cardplay→income freeze, soft-nav, or slow paint can leave #canvas hidden or
+   * a body-level clone covering markers. Idempotent — safe on every phase change / refreshVisuals.
+   */
+  function risqueRestoreHostMapCanvasFromPhaseArtifacts() {
+    if (window.risqueDisplayIsPublic) return;
+    try {
+      var holds = document.querySelectorAll(
+        "#risque-income-transition-hold, [data-risque-transition-freeze='1']"
+      );
+      for (var hi = 0; hi < holds.length; hi += 1) {
+        var hEl = holds[hi];
+        if (hEl && hEl.parentNode) hEl.parentNode.removeChild(hEl);
+      }
+    } catch (eHold) {
+      /* ignore */
+    }
+    var canvas = document.getElementById("canvas");
+    if (!canvas) return;
+    try {
+      canvas.style.visibility = "";
+      canvas.style.opacity = "";
+      canvas.style.transition = "";
+      canvas.removeAttribute("aria-hidden");
+      canvas.classList.add("visible");
+      var stageImage = canvas.querySelector(".stage-image");
+      var svgOverlay = canvas.querySelector(".svg-overlay");
+      if (stageImage) stageImage.classList.add("visible");
+      if (svgOverlay) svgOverlay.classList.add("visible");
+    } catch (eCv) {
+      /* ignore */
+    }
+    try {
+      var uiOv = document.querySelector(".ui-overlay");
+      if (uiOv) uiOv.classList.add("visible");
+    } catch (eUi) {
+      /* ignore */
+    }
+  }
+  window.risqueRestoreHostMapCanvasFromPhaseArtifacts = risqueRestoreHostMapCanvasFromPhaseArtifacts;
+
+  /** Host-only: restore canvas chrome then paint territories (double rAF for slow GPUs / dual-head). */
+  function risqueRepaintHostMapSoon(gs) {
+    if (window.risqueDisplayIsPublic || !gs || !window.gameUtils) return;
+    risqueRestoreHostMapCanvasFromPhaseArtifacts();
+    function paintOnce() {
+      try {
+        if (typeof window.gameUtils.validateGameState === "function" && !window.gameUtils.validateGameState(gs)) {
+          return;
+        }
+        window.gameUtils.initGameView();
+        if (typeof resizeRuntimeCanvas === "function") {
+          resizeRuntimeCanvas();
+        } else if (typeof window.gameUtils.resizeCanvas === "function") {
+          window.gameUtils.resizeCanvas();
+        }
+        window.gameUtils.renderTerritories(null, gs);
+        window.gameUtils.renderStats(gs);
+      } catch (ePaint) {
+        /* ignore */
+      }
+    }
+    paintOnce();
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        risqueRestoreHostMapCanvasFromPhaseArtifacts();
+        paintOnce();
+      });
+    });
+  }
+  window.risqueRepaintHostMapSoon = risqueRepaintHostMapSoon;
+
   /*
    * Public board must follow mirrored gameState.phase only. A stale ?phase=attack (or any host URL
    * copied into this tab) would mount the wrong UI (e.g. attack while state is deploy).
@@ -1561,6 +1634,77 @@
     return out;
   }
 
+  /** After quota pressure, always omit replay blobs from STORAGE_KEY for the rest of this tab. */
+  window.__risqueQuotaPressureLite = false;
+
+  function risqueReleaseLocalStorageQuotaPressure() {
+    var keysToDrop = [
+      LOG_KEY,
+      "risqueReplayTapeSidecar",
+      SIDECAR_INDEX_KEY,
+      ROUND_AUTOSAVE_KEY
+    ];
+    var ki;
+    for (ki = 0; ki < keysToDrop.length; ki += 1) {
+      try {
+        localStorage.removeItem(keysToDrop[ki]);
+      } catch (eDrop) {
+        /* ignore */
+      }
+    }
+    try {
+      var rawGrace = localStorage.getItem(GRACE_SNAPSHOTS_STORAGE_KEY);
+      var graceArr = tryParse(rawGrace || "[]");
+      if (Array.isArray(graceArr) && graceArr.length > 8) {
+        localStorage.setItem(GRACE_SNAPSHOTS_STORAGE_KEY, JSON.stringify(graceArr.slice(-8)));
+      }
+    } catch (eGrace) {
+      try {
+        localStorage.removeItem(GRACE_SNAPSHOTS_STORAGE_KEY);
+      } catch (eGraceRm) {
+        /* ignore */
+      }
+    }
+    try {
+      var led = tryParse(localStorage.getItem(LEDGER_KEY) || "[]");
+      if (Array.isArray(led) && led.length > 80) {
+        localStorage.setItem(LEDGER_KEY, JSON.stringify(led.slice(-80)));
+      }
+    } catch (eLed) {
+      /* ignore */
+    }
+    try {
+      var mir = localStorage.getItem(PUBLIC_MIRROR_KEY);
+      if (mir && mir.length > 450000) {
+        localStorage.removeItem(PUBLIC_MIRROR_KEY);
+      }
+    } catch (eMir) {
+      /* ignore */
+    }
+    window.__risqueQuotaPressureLite = true;
+  }
+
+  function risqueShrinkGameStateJsonForStorage(key, value) {
+    if (key !== STORAGE_KEY || typeof value !== "string") return value;
+    try {
+      var parsed = JSON.parse(value);
+      if (!parsed || typeof parsed !== "object") return value;
+      if (typeof window.risqueReplayPruneOldestRoundBuckets === "function") {
+        window.risqueReplayPruneOldestRoundBuckets(parsed, 2);
+      }
+      var slim =
+        typeof window.risqueStripReplayFromGameStateClone === "function"
+          ? window.risqueStripReplayFromGameStateClone(parsed)
+          : risqueBuildEmergencyStorageState(parsed);
+      risqueApplyLsReplayLiteToPayload(slim);
+      return typeof window.risqueJsonStringifyGameStateForStorage === "function"
+        ? window.risqueJsonStringifyGameStateForStorage(slim)
+        : JSON.stringify(slim);
+    } catch (eShr) {
+      return value;
+    }
+  }
+
   function risqueTryWriteLocalStorageWithQuotaFallback(key, value) {
     try {
       localStorage.setItem(key, value);
@@ -1568,28 +1712,34 @@
     } catch (err) {
       if (!(err && (err.name === "QuotaExceededError" || err.code === 22))) return false;
     }
-    try {
-      var rawLogs = localStorage.getItem(LOG_KEY);
-      var logsArr = tryParse(rawLogs || "[]");
-      if (Array.isArray(logsArr) && logsArr.length > 40) {
-        localStorage.setItem(LOG_KEY, JSON.stringify(logsArr.slice(-40)));
-      } else {
-        localStorage.removeItem(LOG_KEY);
-      }
-    } catch (eTrim) {
-      try {
-        localStorage.removeItem(LOG_KEY);
-      } catch (eRm) {
-        /* ignore */
-      }
-    }
+    risqueReleaseLocalStorageQuotaPressure();
     try {
       localStorage.setItem(key, value);
       return true;
     } catch (errRetry) {
-      return false;
+      if (!(errRetry && (errRetry.name === "QuotaExceededError" || errRetry.code === 22))) return false;
     }
+    if (key === STORAGE_KEY) {
+      var shrunk = risqueShrinkGameStateJsonForStorage(key, value);
+      if (shrunk !== value) {
+        try {
+          localStorage.setItem(key, shrunk);
+          try {
+            console.warn(
+              "[RISQUE] localStorage full — saved lean gameState (replay omitted from disk; still in memory)."
+            );
+          } catch (eWarn) {
+            /* ignore */
+          }
+          return true;
+        } catch (errSlim) {
+          if (!(errSlim && (errSlim.name === "QuotaExceededError" || errSlim.code === 22))) return false;
+        }
+      }
+    }
+    return false;
   }
+  window.risqueTryWriteLocalStorageWithQuotaFallback = risqueTryWriteLocalStorageWithQuotaFallback;
 
   function risqueBuildEmergencyStorageState(forDisk) {
     var lite = JSON.parse(JSON.stringify(forDisk || {}));
@@ -1600,6 +1750,8 @@
     delete lite.risqueCheapReplayStills;
     delete lite.risqueCheapReplayBattleSeq;
     delete lite.risqueCheapReplayFrameSeq;
+    delete lite.risqueCombatLogTail;
+    return lite;
   }
 
   /**
@@ -1621,6 +1773,7 @@
   ];
   var __risqueLoggedLsReplayLite = false;
   function risqueLocalStorageReplayLiteEnabled() {
+    if (window.__risqueQuotaPressureLite) return true;
     if (typeof window.risqueLsReplayLiteEffective === "function") {
       return window.risqueLsReplayLiteEffective();
     }
@@ -7342,30 +7495,23 @@
       try {
         origSetItem.apply(this, arguments);
       } catch (eSet) {
-        if (key === STORAGE_KEY && eSet && eSet.name === "QuotaExceededError") {
-          try {
-            var rawL2 = this.getItem(LOG_KEY);
-            var la = tryParse(rawL2 || "[]");
-            if (Array.isArray(la) && la.length > 40) {
-              this.setItem(LOG_KEY, JSON.stringify(la.slice(-40)));
-            } else {
-              this.removeItem(LOG_KEY);
+        if (key === STORAGE_KEY && eSet && (eSet.name === "QuotaExceededError" || eSet.code === 22)) {
+          var valRetry = typeof val === "string" ? val : String(val);
+          if (risqueTryWriteLocalStorageWithQuotaFallback(STORAGE_KEY, valRetry)) {
+            if (!window.risqueDisplayIsPublic) {
+              try {
+                var nextGsRec = typeof val === "string" ? JSON.parse(val) : val;
+                recordGracePhaseStartWithPrev(rawPrev, nextGsRec);
+              } catch (eRec) {
+                /* ignore */
+              }
             }
-          } catch (eFree) {
-            try {
-              this.removeItem(LOG_KEY);
-            } catch (eRm) {
-              /* ignore */
-            }
+          } else {
+            console.warn("[RISQUE] gameState localStorage write failed after quota recovery");
           }
-          try {
-            origSetItem.apply(this, arguments);
-          } catch (eRetry) {
-            throw eRetry;
-          }
-        } else {
-          throw eSet;
+          return;
         }
+        throw eSet;
       }
       if (key === STORAGE_KEY && !window.risqueDisplayIsPublic) {
         try {
@@ -7559,7 +7705,16 @@
         typeof window.risqueJsonStringifyGameStateForStorage === "function"
           ? window.risqueJsonStringifyGameStateForStorage(payload)
           : JSON.stringify(payload);
-      localStorage.setItem(STORAGE_KEY, diskJson);
+      if (!risqueTryWriteLocalStorageWithQuotaFallback(STORAGE_KEY, diskJson)) {
+        var emergency = risqueBuildEmergencyStorageState(payload);
+        var emergencyJson =
+          typeof window.risqueJsonStringifyGameStateForStorage === "function"
+            ? window.risqueJsonStringifyGameStateForStorage(emergency)
+            : JSON.stringify(emergency);
+        if (!risqueTryWriteLocalStorageWithQuotaFallback(STORAGE_KEY, emergencyJson)) {
+          throw new Error("QuotaExceededError");
+        }
+      }
     }
     function notifyStaging(s) {
       try {
@@ -7613,9 +7768,31 @@
         }
       }
       console.error("Unable to save gameState:", err);
+      try {
+        if (typeof window.gameUtils !== "undefined" && window.gameUtils.showError) {
+          window.gameUtils.showError(
+            "Browser storage is full — game continues in memory. Clear site data for this page or use SAVE to disk, then reload."
+          );
+        }
+      } catch (eToast) {
+        /* ignore */
+      }
       return false;
     }
   }
+  window.risqueSaveGameState = saveState;
+
+  /** Persist host state for phase navigation; never throws (income/deploy must advance even if disk is full). */
+  window.risquePersistGameStateForNavigation = function (gs) {
+    if (!gs || typeof gs !== "object") return false;
+    window.gameState = gs;
+    try {
+      return !!saveState(gs);
+    } catch (eNav) {
+      console.warn("[RISQUE] risquePersistGameStateForNavigation:", eNav);
+      return false;
+    }
+  };
 
   /** Turn on DD.json / rNpM.json disk tapes when the host has a real save target (folder or launcher disk). */
   function risqueReplayEnableDiskTapeExportsForWritableSaveRoot(optGameState) {
@@ -9370,6 +9547,14 @@
     }
     window.gameState = state;
     risqueEnsurePhaseIncomeEntryVeilFromStorage(state);
+    if (
+      !window.risqueDisplayIsPublic &&
+      state &&
+      typeof state === "object" &&
+      String(state.phase || "") !== "login"
+    ) {
+      risqueRestoreHostMapCanvasFromPhaseArtifacts();
+    }
     if (!window.risqueDisplayIsPublic && state && typeof state === "object") {
       var phClear = String(state.phase || "");
       if (
@@ -9949,16 +10134,7 @@
       delete window.__risqueSuppressHostMapRedraw;
     } catch (eS) {}
 
-    var fh = document.getElementById("risque-income-transition-hold");
-    if (fh && fh.parentNode) fh.parentNode.removeChild(fh);
-    var cvs = document.getElementById("canvas");
-    if (cvs) {
-      try {
-        cvs.style.visibility = "";
-        cvs.style.transition = "";
-        cvs.removeAttribute("aria-hidden");
-      } catch (eCv) {}
-    }
+    risqueRestoreHostMapCanvasFromPhaseArtifacts();
 
     try {
       clearPostReceiveNavigationArtifacts("risqueNavigateGameHtmlSoft");

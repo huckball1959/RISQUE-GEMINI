@@ -3918,6 +3918,14 @@
       console.error('[Cardplay] gameUtils missing');
       return;
     }
+    if (typeof window.risqueRestoreHostMapCanvasFromPhaseArtifacts === "function") {
+      window.risqueRestoreHostMapCanvasFromPhaseArtifacts();
+    }
+    try {
+      delete window.__risqueSuppressHostMapRedraw;
+    } catch (eSupCp) {
+      /* ignore */
+    }
     var gs = window.gameState;
     if (!gs || !gs.players || !gs.currentPlayer || !gs.turnOrder || !Array.isArray(gs.turnOrder) || gs.turnOrder.length === 0) {
       logToStorage('Invalid or missing game state at mount');
@@ -3967,6 +3975,9 @@
     }
     clearCardplayPublicSpectator();
     cardplayInit();
+    if (typeof window.risqueRepaintHostMapSoon === "function" && window.gameState) {
+      window.risqueRepaintHostMapSoon(window.gameState);
+    }
   }
 
   window.risquePhases = window.risquePhases || {};

@@ -1238,26 +1238,14 @@ window.initReinforcePhase = initReinforcePhase;
 (function () {
   "use strict";
 
-  function reinforceRestoreCanvasFromTransitionHold() {
-    var hold = document.getElementById("risque-income-transition-hold");
-    if (hold && hold.parentNode) hold.parentNode.removeChild(hold);
-    var canvas = document.getElementById("canvas");
-    if (!canvas) return;
-    try {
-      canvas.style.visibility = "";
-      canvas.style.transition = "";
-      canvas.removeAttribute("aria-hidden");
-    } catch (eCv) {
-      /* ignore */
-    }
-  }
-
   function mount(stageHost, opts) {
     opts = opts || {};
     var uiOverlay = document.getElementById("ui-overlay");
     if (!uiOverlay || !window.gameUtils) return;
 
-    reinforceRestoreCanvasFromTransitionHold();
+    if (typeof window.risqueRestoreHostMapCanvasFromPhaseArtifacts === "function") {
+      window.risqueRestoreHostMapCanvasFromPhaseArtifacts();
+    }
     try {
       delete window.__risqueSuppressHostMapRedraw;
     } catch (eSup) {
@@ -1265,7 +1253,9 @@ window.initReinforcePhase = initReinforcePhase;
     }
 
     /* Paint the board from shell state before HUD slot swap so the map never sits empty while async init ran. */
-    if (
+    if (typeof window.risqueRepaintHostMapSoon === "function" && window.gameState) {
+      window.risqueRepaintHostMapSoon(window.gameState);
+    } else if (
       window.gameState &&
       typeof window.gameUtils.validateGameState === "function" &&
       window.gameUtils.validateGameState(window.gameState)
