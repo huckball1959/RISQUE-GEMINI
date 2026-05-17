@@ -231,14 +231,12 @@ let campaignQDevMode = false;
 window.risqueCampaignTroubleshootLog = window.risqueCampaignTroubleshootLog || [];
 
 /**
- * Attack toolbar row 1 + row 2 (Q BLITZ / Q CAMP). Shared by runtime HUD and attack fallback mount.
+ * Attack toolbar: two six-slot rows above control voice. Row 1 = roll/blitz/campaign/clear + stacked aerial or Q blitz;
+ * row 2 = Q camp + cond threshold. Shared by runtime HUD and attack fallback mount.
  * @param {{ includeReinforceInStrip?: boolean }} opts
  */
 function buildAttackToolbarStripButtonsInnerHtml(opts) {
   opts = opts && typeof opts === 'object' ? opts : {};
-  const reinforceBtn = opts.includeReinforceInStrip
-    ? '<button id="reinforce" class="attack-ctl-btn attack-ctl-reinforce" type="button" title="Continue to reinforcement phase">CONTINUE TO REINFORCEMENT</button>'
-    : '';
   const blitzDropdown =
     '<div class="attack-blitz-wrap">' +
     '<button id="blitz" class="attack-ctl-btn attack-ctl-blitz" type="button" title="Open blitz options" aria-expanded="false" aria-haspopup="true">BLITZ ▾</button>' +
@@ -257,7 +255,7 @@ function buildAttackToolbarStripButtonsInnerHtml(opts) {
     '</div>';
   const campaignDropdown =
     '<div class="attack-campaign-wrap">' +
-    '<button id="campaign" class="attack-ctl-btn attack-ctl-campaign" type="button" title="Open campaign options" aria-expanded="false" aria-haspopup="true">CAMPAIGN ▾</button>' +
+    '<button id="campaign" class="attack-ctl-btn attack-ctl-campaign" type="button" title="Open campaign options" aria-expanded="false" aria-haspopup="true">CAMP ▾</button>' +
     '<div id="campaign-dropdown" class="attack-campaign-dropdown attack-campaign-dropdown--flyout" role="menu" hidden>' +
     '<div class="attack-menu-row attack-menu-row--tall">' +
     '<button type="button" class="attack-blitz-dropdown-item attack-menu-tile attack-menu-tile--instant" aria-haspopup="true" aria-expanded="false" title="Campaign instant options">INSTANT</button>' +
@@ -270,31 +268,34 @@ function buildAttackToolbarStripButtonsInnerHtml(opts) {
     '<button type="button" class="attack-menu-flyout-item" data-campaign-mode="pause-cond" role="menuitem">Campaign Step with conditions</button>' +
     '</div></div></div>' +
     '</div>';
+  void opts;
   return (
-    '<div class="attack-toolbar-rows">' +
-    '<div class="attack-toolbar-row--6">' +
+    '<div class="attack-toolbar-row--6 attack-toolbar-row--primary">' +
     '<button id="roll" class="attack-ctl-btn attack-ctl-roll" type="button" title="Single roll">ROLL</button>' +
     blitzDropdown +
     campaignDropdown +
-    '<button id="new-attack" class="attack-ctl-btn attack-ctl-new" type="button" title="Cancel all attacks">CLEAR</button>' +
-    reinforceBtn +
-    '<div id="aerial-attack-group">' +
-    '<button id="aerial-attack" class="attack-ctl-btn attack-ctl-aerial" type="button" title="First aerial bridge (wildcard)">AERIAL</button>' +
-    '<button id="aerial-attack-2" class="attack-ctl-btn attack-ctl-aerial" type="button" title="Second aerial bridge (wildcard)">AERIAL</button>' +
-    '</div>' +
-    '</div>' +
-    '<div class="attack-toolbar-row--6 attack-toolbar-row--qdev">' +
-    '<button id="q-blitz" class="attack-ctl-btn attack-ctl-qdev" type="button" title="Dev: instant blitz, then move all troops into capture (leave 1 on source)">Q BLITZ</button>' +
-    '<button id="q-camp" class="attack-ctl-btn attack-ctl-qdev" type="button" title="Dev: plan campaign on map, Q CAMP again to run (leave 1, move all rest)">Q CAMP</button>' +
-    '<span class="attack-toolbar-slot-spacer" aria-hidden="true"></span>' +
-    '<span class="attack-toolbar-slot-spacer" aria-hidden="true"></span>' +
-    '<span class="attack-toolbar-slot-spacer" aria-hidden="true"></span>' +
-    '<span class="attack-toolbar-slot-spacer" aria-hidden="true"></span>' +
-    '</div>' +
+    '<button id="new-attack" class="attack-ctl-btn attack-ctl-new" type="button" title="Cancel all attacks">CLR</button>' +
+    '<button id="aerial-attack" class="attack-ctl-btn attack-ctl-aerial" type="button" title="First aerial bridge (wildcard)">AERIAL1</button>' +
+    '<button id="aerial-attack-2" class="attack-ctl-btn attack-ctl-aerial" type="button" title="Second aerial bridge (wildcard)">AERIAL2</button>' +
     '</div>'
   );
 }
 window.buildAttackToolbarStripButtonsInnerHtml = buildAttackToolbarStripButtonsInnerHtml;
+
+function buildAttackDevRowInnerHtml() {
+  return (
+    '<div class="ucp-slot-strip-buttons attack-dev-row-buttons">' +
+    '<button type="button" class="attack-ctl-btn attack-ctl-dev-label" id="attack-dev-row-label" disabled tabindex="-1" aria-disabled="true" title="Developer controls row">DEV ROW</button>' +
+    '<button id="q-blitz-l3" class="attack-ctl-btn attack-ctl-qdev" type="button" title="Instant blitz, then leave 3 troops on the attacking territory" hidden aria-hidden="true">Q BLITZ L3</button>' +
+    '<button id="q-blitz-t3" class="attack-ctl-btn attack-ctl-qdev" type="button" title="Instant blitz, then move up to 3 troops onto the capture" hidden aria-hidden="true">Q BLITZ T3</button>' +
+    '<button id="q-camp" class="attack-ctl-btn attack-ctl-qdev" type="button" title="Plan campaign on map (leave 1 each capture), then Confirm to start">Q CAMP</button>' +
+    '</div>' +
+    '<div class="ucp-slot-strip-num-wrap attack-dev-row-cond">' +
+    '<input id="cond-threshold" class="ucp-slot-strip-number" type="number" min="0" value="0" title="Stop blitz when your troops on the attacking territory reach this number (0 = default 5)" aria-label="Conditional blitz stop-at troop count on attacker" />' +
+    '</div>'
+  );
+}
+window.buildAttackDevRowInnerHtml = buildAttackDevRowInnerHtml;
 
 const elements = {};
 
@@ -314,12 +315,12 @@ function cacheElements() {
   elements.campaignDropdown = document.getElementById('campaign-dropdown');
   elements.campaignWrap = document.querySelector('.attack-campaign-wrap');
   elements.newAttack = document.getElementById('new-attack');
-  elements.qBlitz = document.getElementById('q-blitz');
+  elements.qBlitzL3 = document.getElementById('q-blitz-l3');
+  elements.qBlitzT3 = document.getElementById('q-blitz-t3');
   elements.qCamp = document.getElementById('q-camp');
   elements.reinforce = document.getElementById('reinforce');
   elements.aerialAttack = document.getElementById('aerial-attack');
   elements.aerialAttack2 = document.getElementById('aerial-attack-2');
-  elements.aerialAttackGroup = document.getElementById('aerial-attack-group');
   elements.logText = document.getElementById('log-text');
   elements.attackerPanelName = document.getElementById('attacker-panel-name');
   elements.defenderPanelName = document.getElementById('defender-panel-name');
@@ -1355,20 +1356,19 @@ function syncAttackPhaseActionLocks() {
   if (rollEl) rollEl.disabled = !!pending || !hasPair;
   if (blitzEl) blitzEl.disabled = !!pending || !hasPair;
   if (campaignEl) campaignEl.disabled = !!pending;
-  const qBlitzEl = document.getElementById('q-blitz');
+  const qBlitzL3El = document.getElementById('q-blitz-l3');
+  const qBlitzT3El = document.getElementById('q-blitz-t3');
   const qCampEl = document.getElementById('q-camp');
   const qCampPlanning =
     campaignQDevMode &&
     campaignType === 'instant' &&
     (campaignMode === 'instant_launch' || campaignMode === 'instant_extend');
-  if (qBlitzEl) qBlitzEl.disabled = !!pending || !hasPair || !!qCampPlanning;
+  const qBlitzDisabled = !!pending || !hasPair || !!qCampPlanning;
+  if (qBlitzL3El) qBlitzL3El.disabled = qBlitzDisabled;
+  if (qBlitzT3El) qBlitzT3El.disabled = qBlitzDisabled;
   if (qCampEl) {
     qCampEl.disabled = !!pending;
-    if (qCampPlanning) {
-      qCampEl.textContent = campaignPath.length >= 2 ? 'Q CAMP ▶' : 'Q CAMP';
-    } else {
-      qCampEl.textContent = 'Q CAMP';
-    }
+    qCampEl.textContent = 'Q CAMP';
   }
   const uses =
     window.gameUtils && typeof window.gameUtils.getAerialAttackUsesRemaining === 'function'
@@ -1384,6 +1384,21 @@ function syncAttackPhaseActionLocks() {
     !aerialUnlockedForUi || isSelectingAerialSource || isSelectingAerialTarget || isAwaitingAerialConfirm;
   if (aerialEl) aerialEl.disabled = !!pending || aerialBaseGrey || uses < 1;
   if (aerialEl2) aerialEl2.disabled = !!pending || aerialBaseGrey || uses < 2;
+  const showQBlitzInDevRow = !(aerialUnlockedForUi && uses >= 1);
+  function setDevRowBtnVisible(el, show) {
+    if (!el) return;
+    if (show) {
+      el.hidden = false;
+      el.removeAttribute('hidden');
+      el.setAttribute('aria-hidden', 'false');
+    } else {
+      el.hidden = true;
+      el.setAttribute('hidden', 'hidden');
+      el.setAttribute('aria-hidden', 'true');
+    }
+  }
+  setDevRowBtnVisible(qBlitzL3El, showQBlitzInDevRow);
+  setDevRowBtnVisible(qBlitzT3El, showQBlitzInDevRow);
   if (reinforceEl) reinforceEl.disabled = !!pending || guidedPromptActive;
 }
 
@@ -1967,10 +1982,21 @@ function autoCompleteTroopTransferLeaveBehind(leaveBehind, opts) {
   } else if (window.gameState && window.gameState.risqueTransferPulse) {
     delete window.gameState.risqueTransferPulse;
   }
-  prependCombatLog(
-    `${player.name} moves ${totalToDest} troops into ${prettyTerritoryName(acquired.name)} (leave ${attacking.troops} on ${prettyTerritoryName(attacking.name)}).`,
-    'battle'
-  );
+  if (campaignAuto && campaignQDevMode) {
+    prependCombatLog(
+      `${player.name} moves ${totalToDest} troops after capture (leave ${attacking.troops} on source).`,
+      'battle'
+    );
+    window.gameState.risquePublicAttackTransferSummary = `${player.name} transfers ${totalToDest} troops after capture.`;
+  } else {
+    prependCombatLog(
+      `${player.name} moves ${totalToDest} troops into ${prettyTerritoryName(acquired.name)} (leave ${attacking.troops} on ${prettyTerritoryName(attacking.name)}).`,
+      'battle'
+    );
+    window.gameState.risquePublicAttackTransferSummary = `${player.name} transfers ${totalToDest} troops from ${prettyTerritoryName(
+      attacking.name
+    )} to ${prettyTerritoryName(acquired.name)}.`;
+  }
   if (typeof window.risqueReplayRecordBattle === 'function') {
     try {
       window.risqueReplayRecordBattle(window.gameState);
@@ -1978,9 +2004,6 @@ function autoCompleteTroopTransferLeaveBehind(leaveBehind, opts) {
       /* ignore */
     }
   }
-  window.gameState.risquePublicAttackTransferSummary = `${player.name} transfers ${totalToDest} troops from ${prettyTerritoryName(
-    attacking.name
-  )} to ${prettyTerritoryName(acquired.name)}.`;
   window.gameState.attackPhase = 'attack';
   window.gameState.attackingTerritory = null;
   window.gameState.acquiredTerritory = null;
@@ -2508,18 +2531,35 @@ function completeTroopTransferFromPending(additional) {
   return true;
 }
 
-/** Q BLITZ / Q CAMP: move every troop possible to captured territory (leave 1 on source). */
-function qDevAdditionalTroopsAllButOneOnSource() {
+/** Q BLITZ shortcuts: extra troops to move onto capture after instant blitz (beyond minT). */
+function qDevBlitzSourceTroopsSnapshot() {
   const player = window.gameState.players.find(p => p.name === window.gameState.currentPlayer);
   if (!player || !window.gameState.attackingTerritory) return 0;
   const attacking = player.territories.find(t => t.name === window.gameState.attackingTerritory.name);
   if (!attacking) return 0;
   const minT = window.gameState.minTroopsToTransfer;
-  const sourceTroopsSnapshot = Math.max(0, (attackerInitialTroops || attacking.troops + minT) - minT);
+  return Math.max(0, (attackerInitialTroops || attacking.troops + minT) - minT);
+}
+
+/** @param {'leave3'|'take3'} mode */
+function qDevBlitzAdditionalTroopsForMode(mode) {
+  const sourceTroopsSnapshot = qDevBlitzSourceTroopsSnapshot();
+  const minT =
+    window.gameState && window.gameState.minTroopsToTransfer != null
+      ? window.gameState.minTroopsToTransfer
+      : minTroopsToTransfer || 0;
+  if (mode === 'take3') {
+    /* Up to 3 troops on the capture total (mandatory minT already counts toward that cap). */
+    const maxAdditional = Math.max(0, 3 - minT);
+    return Math.min(maxAdditional, Math.max(0, sourceTroopsSnapshot));
+  }
+  if (mode === 'leave3') {
+    return Math.max(0, sourceTroopsSnapshot - 3);
+  }
   return Math.max(0, sourceTroopsSnapshot - 1);
 }
 
-async function executeQBlitzDev() {
+async function executeQBlitzQuick(transferMode) {
   if (!attacker || !defender) {
     prependCombatLog('Q Blitz: select your territory, then a target to attack.', 'system');
     return;
@@ -2532,23 +2572,56 @@ async function executeQBlitzDev() {
   dismissPrompt();
   if (window.gameState) {
     window.gameState.risqueQDevBlitzAutoTransfer = true;
+    window.gameState.risqueQDevBlitzTransferMode = transferMode === 'take3' ? 'take3' : 'leave3';
   }
   try {
     await blitz();
   } finally {
     if (window.gameState) {
       delete window.gameState.risqueQDevBlitzAutoTransfer;
+      delete window.gameState.risqueQDevBlitzTransferMode;
     }
   }
 }
 
 function startQDevCampaignPlanning() {
   campaignQDevMode = true;
-  startInstantCampaignPlanning();
-  prependCombatLog(
-    'Q Camp: click your start territory, add targets on the map, then Q CAMP again to run (leave 1, move all rest).',
-    'system'
+  startInstantCampaignPlanning({ qDev: true });
+}
+
+function launchQDevCampaignRun() {
+  if (!campaignQDevMode || !campaignPath || campaignPath.length < 2) {
+    prependCombatLog('Q Camp: path needs launch + at least one enemy territory.', 'system');
+    return;
+  }
+  dismissPrompt({ keepInstantCampaignHud: true });
+  instantCampaignGarrison = 1;
+  campaignPreferredGarrison = 1;
+  performInstantCommitFromKeys();
+  void runInstantCampaignExecution().catch(function (e) {
+    try {
+      console.error('[Attack] Q Camp run failed', e);
+    } catch (e2) {
+      /* ignore */
+    }
+  });
+}
+
+function showQDevCampaignConfirmPrompt() {
+  if (!campaignQDevMode || campaignType !== 'instant') return;
+  if (campaignMode !== 'instant_extend' || !campaignPath || campaignPath.length < 2) return;
+  showPrompt(
+    'Start Q Camp? Leaves 1 troop on the attacking territory after each capture.',
+    [
+      { label: 'CONFIRM', title: 'Start campaign (leave 1 on each capture)', onClick: launchQDevCampaignRun },
+      {
+        label: 'BACK',
+        title: 'Keep editing path on the map',
+        onClick: () => dismissPrompt({ keepInstantCampaignHud: true })
+      }
+    ]
   );
+  risqueStartConfirmSlotFlash();
 }
 
 function finishQDevCampaignAfterRun() {
@@ -2572,29 +2645,9 @@ function finishQDevCampaignAfterRun() {
 function onQCampDevClick() {
   closeBlitzDropdown();
   closeCampaignDropdown();
-  if (
-    campaignQDevMode &&
-    campaignType === 'instant' &&
-    (campaignMode === 'instant_launch' || campaignMode === 'instant_extend')
-  ) {
-    if (!campaignPath || campaignPath.length < 2) {
-      prependCombatLog('Q Camp: path needs launch + at least one enemy territory.', 'system');
-      return;
-    }
-    instantCampaignGarrison = 1;
-    campaignPreferredGarrison = 1;
-    performInstantCommitFromKeys();
-    void runInstantCampaignExecution().catch(function (e) {
-      try {
-        console.error('[Attack] Q Camp run failed', e);
-      } catch (e2) {
-        /* ignore */
-      }
-    });
-    return;
-  }
   if (campaignQDevMode) {
     campaignQDevMode = false;
+    dismissPrompt();
     resetInstantCampaignPlanning();
     return;
   }
@@ -3146,10 +3199,12 @@ function initTroopTransfer() {
   const sourceTroopsSnapshot = Math.max(0, attackerInitialTroops - minTroopsToTransfer);
 
   if (window.gameState && window.gameState.risqueQDevBlitzAutoTransfer) {
+    const qMode = window.gameState.risqueQDevBlitzTransferMode || 'leave3';
     window.gameState.risqueQDevBlitzAutoTransfer = false;
+    delete window.gameState.risqueQDevBlitzTransferMode;
     window.gameState.risqueInstantBlitzTransferUi = false;
     teardownAttackTroopTransferWheel();
-    completeTroopTransferFromPending(qDevAdditionalTroopsAllButOneOnSource());
+    completeTroopTransferFromPending(qDevBlitzAdditionalTroopsForMode(qMode));
     syncAttackPhaseActionLocks();
     return;
   }
@@ -3708,6 +3763,30 @@ function formatCampaignPath() {
   return campaignPath.map(l => prettyTerritoryName(l)).join(' → ');
 }
 
+/** Q Camp: status without territory names (map markers show the path). */
+function qDevCampaignPathStatusText() {
+  const n = campaignPath ? campaignPath.length : 0;
+  if (n >= 2) return `Path ready (${n} regions)`;
+  if (n === 1) return 'Launch set — add enemy targets on the map';
+  return 'Pick your launch territory on the map (2+ troops)';
+}
+
+function qDevCampaignPlanningMirrorOpts() {
+  if (!campaignQDevMode || !window.gameState) return null;
+  const cur = window.gameState.currentPlayer;
+  if (!cur) return null;
+  if (campaignMode === 'instant_launch') {
+    return { mirrorPrimary: `${cur} · Q CAMP — pick path on map` };
+  }
+  if (campaignMode === 'instant_extend' && campaignPath && campaignPath.length >= 2) {
+    return { mirrorPrimary: `${cur} · Q CAMP — path ready` };
+  }
+  if (campaignMode === 'instant_extend' && campaignPath && campaignPath.length === 1) {
+    return { mirrorPrimary: `${cur} · Q CAMP — add targets` };
+  }
+  return null;
+}
+
 /** INSTANT, PAUSE, Campaign Step CON, and Instant COND share the same Commit / Begin / Reset map UI. */
 function isCommitRunCampaignType() {
   return campaignType === 'instant' || campaignType === 'pause' || campaignType === 'cond';
@@ -3724,6 +3803,72 @@ function campaignTrace(msg, data) {
       ? ` ${typeof data === 'string' ? data : JSON.stringify(data)}`
       : '';
   prependCombatLog(`[Campaign trace] ${msg}${tail}`, 'system');
+}
+
+function buildQDevCampaignStaticVoiceHtml() {
+  const pathLine = qDevCampaignPathStatusText();
+  return (
+    '<div class="campaign-instant-hud-static">' +
+    '<div class="campaign-instant-framed">' +
+    '<span class="campaign-voice-kicker">Q CAMP</span>' +
+    '<div class="campaign-instant-hud-phase">Leave 1 on each capture</div>' +
+    '<div class="campaign-instant-hud-phase" style="font-size:12px;opacity:.9;margin-top:6px;">' +
+    pathLine +
+    '</div>' +
+    '<div class="campaign-instant-hud-phase" style="font-size:12px;opacity:.85;margin-top:8px;">Confirm below when the path is ready.</div>' +
+    '</div>' +
+    '</div>'
+  );
+}
+
+function paintQDevCampaignHud(reportLine, mirrorOpts) {
+  clearControlVoiceSlotsAndExtras();
+  const vt = document.getElementById('control-voice-text');
+  const vr = document.getElementById('control-voice-report');
+  const cv = document.getElementById('control-voice');
+  const opts = mirrorOpts != null && typeof mirrorOpts === 'object' ? mirrorOpts : null;
+  if (vt) {
+    vt.classList.add('campaign-instant-voice');
+    vt.innerHTML = buildQDevCampaignStaticVoiceHtml();
+  }
+  if (vr) {
+    const r = reportLine != null && String(reportLine) !== '' ? String(reportLine) : '';
+    vr.textContent = r;
+    vr.style.display = r ? 'block' : 'none';
+    vr.className = 'ucp-voice-report' + (r ? ' ucp-voice-report--instant' : '');
+  }
+  if (cv) cv.classList.add('ucp-control-voice--campaign-instant');
+  scrollCampaignVoiceToTop();
+  try {
+    if (window.gameState) {
+      const r = reportLine != null && String(reportLine) !== '' ? String(reportLine) : '';
+      const mp = opts && opts.mirrorPrimary != null && String(opts.mirrorPrimary).trim() !== '' ? String(opts.mirrorPrimary).trim() : null;
+      let mirrorRep = r;
+      if (opts && Object.prototype.hasOwnProperty.call(opts, 'mirrorReport')) {
+        mirrorRep = opts.mirrorReport == null ? '' : String(opts.mirrorReport);
+      }
+      window.gameState.risqueControlVoice = {
+        primary: mp != null ? mp : 'Q CAMP',
+        report: mirrorRep,
+        reportClass: mirrorRep ? 'ucp-voice-report--instant' : ''
+      };
+      if (typeof window.risqueMirrorPushGameState === 'function') {
+        window.risqueMirrorPushGameState();
+      }
+    }
+  } catch (eQDevVoice) {
+    /* ignore */
+  }
+  if (
+    window.risqueRuntimeHud &&
+    typeof window.risqueRuntimeHud.clampCombatLogToCanvasBottom === 'function'
+  ) {
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        window.risqueRuntimeHud.clampCombatLogToCanvasBottom();
+      });
+    });
+  }
 }
 
 function buildInstantStaticVoiceHtml() {
@@ -3806,6 +3951,10 @@ function buildInstantStaticVoiceHtml() {
  * @param {{ mirrorPrimary?: string, mirrorReport?: string, mirrorReportClass?: string }|null} [mirrorOpts] — optional TV/public lines (defaults: kicker + reportLine). {@link mirrorReportClass} matches blitz (e.g. {@code ucp-voice-report--public-blitz-banner}).
  */
 function paintInstantCampaignHud(reportLine, mirrorOpts) {
+  if (campaignQDevMode) {
+    paintQDevCampaignHud(reportLine, mirrorOpts);
+    return;
+  }
   clearControlVoiceSlotsAndExtras();
   const vt = document.getElementById('control-voice-text');
   const vr = document.getElementById('control-voice-report');
@@ -3886,6 +4035,7 @@ function mirrorPrimaryCampaignInstantLaunch() {
  * Same lines for Campaign - Instant, Campaign Step, Campaign Step CON, and Instant COND.
  */
 function instantCampaignPlanningMirrorOpts() {
+  if (campaignQDevMode) return qDevCampaignPlanningMirrorOpts();
   if (!window.gameState || !isCommitRunCampaignType()) return null;
   const cur = window.gameState.currentPlayer;
   if (!cur) return null;
@@ -4192,7 +4342,12 @@ function performInstantCommitFromKeys() {
     paintInstantCampaignHud('', instantCampaignPlanningMirrorOpts() || undefined);
     return;
   }
-  syncInstantCampaignGarrisonFromUi();
+  if (campaignQDevMode) {
+    instantCampaignGarrison = 1;
+    campaignPreferredGarrison = 1;
+  } else {
+    syncInstantCampaignGarrisonFromUi();
+  }
   campaignCommittedPath = campaignPath.slice();
   const pathLine = formatCampaignPath();
   campaignTrace('instant:committed', { path: campaignCommittedPath.slice() });
@@ -4228,6 +4383,11 @@ function performInstantCommitFromKeys() {
   }
 
   campaignMode = 'instant_committed';
+  if (campaignQDevMode) {
+    prependCombatLog('Q Camp: starting — leave 1 on each capture.', 'system');
+    renderAfterCampaignWarpathSync();
+    return;
+  }
   prependCombatLog(`Campaign: path committed (${pathLine}). Click Begin to execute.`, 'system');
   const curCommit = window.gameState && window.gameState.currentPlayer;
   if ((campaignType === 'instant' || campaignType === 'pause') && curCommit) {
@@ -4260,8 +4420,15 @@ async function runInstantCampaignExecution() {
     });
     return;
   }
-  syncInstantCampaignGarrisonFromUi();
-  const leaveBehind = instantCampaignGarrison;
+  if (campaignQDevMode) {
+    instantCampaignGarrison = 1;
+    campaignPreferredGarrison = 1;
+  } else {
+    syncInstantCampaignGarrisonFromUi();
+  }
+  const leaveBehind = campaignQDevMode ? 1 : instantCampaignGarrison;
+  const qDevRun = campaignQDevMode;
+  const qDevHopTotal = campaignCommittedPath ? campaignCommittedPath.length - 1 : 0;
   clearBattleLossFlashNow();
   const cp = campaignCommittedPath;
   const current = window.gameState.currentPlayer;
@@ -4289,16 +4456,20 @@ async function runInstantCampaignExecution() {
     const fromSnap = territorySnapshot(from);
     const toSnap = territorySnapshot(to);
     if (!fromSnap || fromSnap.owner !== current) {
-      stopped = `Stopped before ${prettyTerritoryName(to)}: ${prettyTerritoryName(from)} is not yours or missing.`;
+      stopped = qDevRun
+        ? `Q Camp: stopped (hop ${i + 1}/${qDevHopTotal}) — source not yours or missing.`
+        : `Stopped before ${prettyTerritoryName(to)}: ${prettyTerritoryName(from)} is not yours or missing.`;
       instantMirrorStopAt = from;
       campaignTrace('instant:hop_abort', { from, to, reason: 'bad_from' });
       break;
     }
     const minTroopsForNextHop = Math.max(2, leaveBehind * 2);
     if (fromSnap.troops < minTroopsForNextHop) {
-      stopped = `Stopped before ${prettyTerritoryName(to)}: only ${fromSnap.troops} troop(s) on ${prettyTerritoryName(
-        from
-      )}; need at least ${minTroopsForNextHop} to keep leaving ${leaveBehind}.`;
+      stopped = qDevRun
+        ? `Q Camp: stopped (hop ${i + 1}/${qDevHopTotal}) — not enough troops to keep leaving ${leaveBehind} (${fromSnap.troops} on source, need ${minTroopsForNextHop}).`
+        : `Stopped before ${prettyTerritoryName(to)}: only ${fromSnap.troops} troop(s) on ${prettyTerritoryName(
+            from
+          )}; need at least ${minTroopsForNextHop} to keep leaving ${leaveBehind}.`;
       instantMirrorStopAt = from;
       publishPublicCampaignEndLackOfTroops();
       campaignTrace('instant:hop_abort', {
@@ -4311,12 +4482,18 @@ async function runInstantCampaignExecution() {
       break;
     }
     if (!toSnap) {
-      stopped = `Stopped: ${prettyTerritoryName(to)} not found.`;
+      stopped = qDevRun
+        ? `Q Camp: stopped (hop ${i + 1}/${qDevHopTotal}) — target not found.`
+        : `Stopped: ${prettyTerritoryName(to)} not found.`;
       instantMirrorStopAt = from;
       break;
     }
     if (toSnap.owner === current) {
-      outcomes.push(`${prettyTerritoryName(to)} was already yours — hop skipped.`);
+      outcomes.push(
+        qDevRun
+          ? `Q Camp: hop ${i + 1}/${qDevHopTotal} skipped — already yours.`
+          : `${prettyTerritoryName(to)} was already yours — hop skipped.`
+      );
       campaignTrace('instant:hop_skip_owned', { from, to });
       continue;
     }
@@ -4324,7 +4501,9 @@ async function runInstantCampaignExecution() {
     const adjRev = window.gameUtils.getAdjacencies(to);
     const isAerial = aerialBridge && aerialBridge.source === from && aerialBridge.target === to;
     if (!isAerial && !adj.includes(to) && !adjRev.includes(from)) {
-      stopped = `${prettyTerritoryName(to)} is not adjacent to ${prettyTerritoryName(from)}.`;
+      stopped = qDevRun
+        ? `Q Camp: stopped (hop ${i + 1}/${qDevHopTotal}) — target not adjacent to source.`
+        : `${prettyTerritoryName(to)} is not adjacent to ${prettyTerritoryName(from)}.`;
       instantMirrorStopAt = from;
       campaignTrace('instant:hop_abort', { from, to, reason: 'not_adjacent' });
       break;
@@ -4363,7 +4542,9 @@ async function runInstantCampaignExecution() {
       }
       const minTroopsToSafelyConquerAndLeave = Math.max(2, leaveBehind * 2);
       if (attacker.troops < minTroopsToSafelyConquerAndLeave) {
-        stopped = `Campaign halted before next roll: ${prettyTerritoryName(from)} has ${attacker.troops} troop(s), need at least ${minTroopsToSafelyConquerAndLeave} to keep leaving ${leaveBehind}.`;
+        stopped = qDevRun
+          ? `Q Camp: halted (hop ${i + 1}/${qDevHopTotal}) — not enough troops on source for next roll (need ${minTroopsToSafelyConquerAndLeave}, have ${attacker.troops}).`
+          : `Campaign halted before next roll: ${prettyTerritoryName(from)} has ${attacker.troops} troop(s), need at least ${minTroopsToSafelyConquerAndLeave} to keep leaving ${leaveBehind}.`;
         instantMirrorStopAt = from;
         campaignTrace('instant:campaign_halt_prevent_low_garrison', {
           from,
@@ -4397,9 +4578,10 @@ async function runInstantCampaignExecution() {
             risqueDeferredEliminationConquerPrompt ||
             window.gameState.risqueDeferConquerElimination)
         ) {
-          stopped =
-            `Campaign interrupted: ${prettyTerritoryName(to)} eliminated a player. ` +
-            "Resolving conquer/cards now; resume attacks afterward.";
+          stopped = qDevRun
+            ? 'Q Camp: interrupted — player eliminated; resolving conquer/cards.'
+            : `Campaign interrupted: ${prettyTerritoryName(to)} eliminated a player. ` +
+              'Resolving conquer/cards now; resume attacks afterward.';
           instantMirrorStopAt = to;
           campaignTrace('instant:campaign_interrupt_elimination', { from, to, via: 'deferred-flag' });
           instantInterruptedByElimination = true;
@@ -4407,9 +4589,10 @@ async function runInstantCampaignExecution() {
           break;
         }
         if (res.campaignInterruptedByElimination) {
-          stopped =
-            `Campaign interrupted: ${prettyTerritoryName(to)} eliminated a player. ` +
-            "Resolving conquer/cards now; resume attacks afterward.";
+          stopped = qDevRun
+            ? 'Q Camp: interrupted — player eliminated; resolving conquer/cards.'
+            : `Campaign interrupted: ${prettyTerritoryName(to)} eliminated a player. ` +
+              'Resolving conquer/cards now; resume attacks afterward.';
           instantMirrorStopAt = to;
           campaignTrace('instant:campaign_interrupt_elimination', { from, to });
           instantInterruptedByElimination = true;
@@ -4418,9 +4601,11 @@ async function runInstantCampaignExecution() {
         }
         if (res.campaignHalted) {
           instantHaltWeakGarrison = true;
-          stopped = `Campaign halted: only 1 troop remained on ${prettyTerritoryName(
-            from
-          )} after capturing ${prettyTerritoryName(to)} — cannot keep leaving ${leaveBehind} on each territory. Continue manually from here.`;
+          stopped = qDevRun
+            ? `Q Camp: halted (hop ${i + 1}/${qDevHopTotal}) — cannot keep leaving ${leaveBehind} after capture; continue manually.`
+            : `Campaign halted: only 1 troop remained on ${prettyTerritoryName(
+                from
+              )} after capturing ${prettyTerritoryName(to)} — cannot keep leaving ${leaveBehind} on each territory. Continue manually from here.`;
           instantMirrorStopAt = from;
           campaignTrace('instant:campaign_halt_weak_garrison', { from, to, leaveBehind });
         }
@@ -4436,13 +4621,21 @@ async function runInstantCampaignExecution() {
     }
 
     if (instantInterruptedByElimination) {
-      outcomes.push(`Won ${prettyTerritoryName(from)} → ${prettyTerritoryName(to)} in ${rounds} combat round(s).`);
+      outcomes.push(
+        qDevRun
+          ? `Q Camp: hop ${i + 1}/${qDevHopTotal} won in ${rounds} combat round(s).`
+          : `Won ${prettyTerritoryName(from)} → ${prettyTerritoryName(to)} in ${rounds} combat round(s).`
+      );
       outcomes.push('Campaign interrupted by elimination — conquer/cards flow takes over.');
       break;
     }
 
     if (instantHaltWeakGarrison) {
-      outcomes.push(`Won ${prettyTerritoryName(from)} → ${prettyTerritoryName(to)} in ${rounds} combat round(s).`);
+      outcomes.push(
+        qDevRun
+          ? `Q Camp: hop ${i + 1}/${qDevHopTotal} won in ${rounds} combat round(s).`
+          : `Won ${prettyTerritoryName(from)} → ${prettyTerritoryName(to)} in ${rounds} combat round(s).`
+      );
       outcomes.push(
         `Halted — cannot keep leaving ${leaveBehind} on each territory after this capture; continue manually.`
       );
@@ -4450,12 +4643,18 @@ async function runInstantCampaignExecution() {
     }
 
     if (!conquered) {
-      stopped = `Battle failed: ${prettyTerritoryName(from)} → ${prettyTerritoryName(to)} (${rounds} round(s)); defender held.`;
+      stopped = qDevRun
+        ? `Q Camp: hop ${i + 1}/${qDevHopTotal} failed (${rounds} round(s)); defender held.`
+        : `Battle failed: ${prettyTerritoryName(from)} → ${prettyTerritoryName(to)} (${rounds} round(s)); defender held.`;
       instantMirrorStopAt = from;
       campaignTrace('instant:hop_fail', { from, to, rounds });
       break;
     }
-    outcomes.push(`Won ${prettyTerritoryName(from)} → ${prettyTerritoryName(to)} in ${rounds} combat round(s).`);
+    outcomes.push(
+      qDevRun
+        ? `Q Camp: hop ${i + 1}/${qDevHopTotal} won in ${rounds} combat round(s).`
+        : `Won ${prettyTerritoryName(from)} → ${prettyTerritoryName(to)} in ${rounds} combat round(s).`
+    );
     campaignTrace('instant:hop_ok', { from, to, rounds });
     await risqueYieldInstantCampaignPaint();
   }
@@ -4471,8 +4670,10 @@ async function runInstantCampaignExecution() {
   outcomes.forEach(o => prependCombatLog(`Campaign: ${o}`, 'system'));
   if (stopped) prependCombatLog(`Campaign: ${stopped}`, 'system');
   prependCombatLog(
-    (condInstant ? 'INSTANT COND' : 'Campaign INSTANT') +
-      ': run complete — see log above. Reset for a new plan · CLEAR idle.',
+    qDevRun
+      ? 'Q Camp: run complete — see log above.'
+      : (condInstant ? 'INSTANT COND' : 'Campaign INSTANT') +
+        ': run complete — see log above. Reset for a new plan · CLEAR idle.',
     'system'
   );
   if (window.gameState) {
@@ -4972,7 +5173,8 @@ function resetInstantCampaignPlanning() {
   resetInstantCampaignPlanningKeys();
 }
 
-function startInstantCampaignPlanning() {
+function startInstantCampaignPlanning(opts) {
+  opts = opts && typeof opts === 'object' ? opts : {};
   closeBlitzDropdown();
   closeCampaignDropdown();
   dismissPrompt();
@@ -4996,12 +5198,14 @@ function startInstantCampaignPlanning() {
   if (g && g.parentNode) g.parentNode.removeChild(g);
   clearInstantCampaignWarpath();
   prependCombatLog(
-    'Campaign INSTANT: map picks — Commit, Begin, Reset; set troops to leave on source (default 1).',
+    opts.qDev
+      ? 'Q Camp: pick launch and targets on the map, then Confirm (leaves 1 on each capture).'
+      : 'Campaign INSTANT: map picks — Commit, Begin, Reset; set troops to leave on source (default 1).',
     'system'
   );
-  campaignTrace('instant:start', {});
+  campaignTrace(opts.qDev ? 'qCamp:start' : 'instant:start', {});
   {
-    const mp = mirrorPrimaryCampaignInstantLaunch();
+    const mp = opts.qDev ? null : mirrorPrimaryCampaignInstantLaunch();
     paintInstantCampaignHud('', mp ? { mirrorPrimary: mp } : undefined);
   }
   renderAfterCampaignWarpathSync();
@@ -5106,7 +5310,9 @@ function handleInstantCampaignTerritoryClick(label) {
     if (snap.owner !== current) {
       campaignTrace('instant:click_invalid', { label, reason: 'not_yours' });
       prependCombatLog(
-        `Campaign: ${prettyTerritoryName(label)} is not yours — you are ${current}.`,
+        campaignQDevMode
+          ? 'Q Camp: that region is not yours.'
+          : `Campaign: ${prettyTerritoryName(label)} is not yours — you are ${current}.`,
         'system'
       );
       paintInstantCampaignHud('');
@@ -5121,10 +5327,18 @@ function handleInstantCampaignTerritoryClick(label) {
     campaignPath = [label];
     campaignMode = 'instant_extend';
     campaignTrace('instant:launch_picked', { label });
-    prependCombatLog(`Campaign: launch ${prettyTerritoryName(label)} (${snap.troops} troops).`, 'system');
+    prependCombatLog(
+      campaignQDevMode
+        ? `Q Camp: launch set (${snap.troops} troops on source).`
+        : `Campaign: launch ${prettyTerritoryName(label)} (${snap.troops} troops).`,
+      'system'
+    );
     paintInstantCampaignHud('', instantCampaignPlanningMirrorOpts() || undefined);
     renderAfterCampaignWarpathSync();
-    if (campaignQDevMode) syncAttackPhaseActionLocks();
+    if (campaignQDevMode) {
+      dismissPrompt({ keepInstantCampaignHud: true });
+      syncAttackPhaseActionLocks();
+    }
     return true;
   }
 
@@ -5137,11 +5351,20 @@ function handleInstantCampaignTerritoryClick(label) {
         campaignMode = 'instant_launch';
         prependCombatLog('Campaign: cleared launch — pick a new start.', 'system');
       } else {
-        prependCombatLog(`Campaign: undo — path now ${formatCampaignPath()}.`, 'system');
+        prependCombatLog(
+          campaignQDevMode
+            ? `Q Camp: undo — ${qDevCampaignPathStatusText()}.`
+            : `Campaign: undo — path now ${formatCampaignPath()}.`,
+          'system'
+        );
       }
       paintInstantCampaignHud('', instantCampaignPlanningMirrorOpts() || undefined);
       renderAfterCampaignWarpathSync();
-      if (campaignQDevMode) syncAttackPhaseActionLocks();
+      if (campaignQDevMode) {
+        if (campaignPath.length < 2) dismissPrompt({ keepInstantCampaignHud: true });
+        else showQDevCampaignConfirmPrompt();
+        syncAttackPhaseActionLocks();
+      }
       return true;
     }
     const adj = window.gameUtils.getAdjacencies(last);
@@ -5164,10 +5387,18 @@ function handleInstantCampaignTerritoryClick(label) {
     }
     campaignPath.push(label);
     campaignTrace('instant:target_picked', { label, path: campaignPath.slice() });
-    prependCombatLog(`Campaign: + ${prettyTerritoryName(label)} → ${formatCampaignPath()}`, 'system');
+    prependCombatLog(
+      campaignQDevMode
+        ? `Q Camp: target added (${campaignPath.length} regions on path).`
+        : `Campaign: + ${prettyTerritoryName(label)} → ${formatCampaignPath()}`,
+      'system'
+    );
     paintInstantCampaignHud('', instantCampaignPlanningMirrorOpts() || undefined);
     renderAfterCampaignWarpathSync();
-    if (campaignQDevMode) syncAttackPhaseActionLocks();
+    if (campaignQDevMode) {
+      showQDevCampaignConfirmPrompt();
+      syncAttackPhaseActionLocks();
+    }
     return true;
   }
 
@@ -5983,7 +6214,6 @@ function initAttackPhase(mountEpoch) {
     !elements.newAttack ||
     !elements.reinforce ||
     !elements.aerialAttack ||
-    !elements.aerialAttackGroup ||
     !elements.logText ||
     !elements.aerialBridgeGroup ||
     !elements.uiOverlay
@@ -6082,14 +6312,21 @@ function initAttackPhase(mountEpoch) {
     aerialBridge = aerialBridgeFromGameState(gameState);
     isAerialAttackEnabled = !!aerialBridge || aerialUsesInit > 0;
 
-    elements.aerialAttackGroup.style.display = 'block';
-
     elements.roll.addEventListener('click', () => rollDice(), { signal: acSig });
-    if (elements.qBlitz) {
-      elements.qBlitz.addEventListener(
+    if (elements.qBlitzL3) {
+      elements.qBlitzL3.addEventListener(
         'click',
         () => {
-          void executeQBlitzDev();
+          void executeQBlitzQuick('leave3');
+        },
+        { signal: acSig }
+      );
+    }
+    if (elements.qBlitzT3) {
+      elements.qBlitzT3.addEventListener(
+        'click',
+        () => {
+          void executeQBlitzQuick('take3');
         },
         { signal: acSig }
       );
@@ -6434,9 +6671,6 @@ window.initAttackPhase = initAttackPhase;
             '<button type="button" id="attack-step-pause-btn" class="attack-ctl-btn attack-ctl-step-pause" title="Pause or resume">PAUSE</button>' +
             '<button type="button" id="attack-step-cancel-btn" class="attack-ctl-btn attack-ctl-step-cancel" title="Cancel and return to territory selection">CANCEL</button>' +
             '</div>' +
-            '<div class="ucp-slot-strip-num-wrap">' +
-            '<input id="cond-threshold" class="ucp-slot-strip-number" type="number" min="0" value="0" title="Stop blitz when your troops on the attacking territory reach this number (0 = default 5)" aria-label="Conditional blitz stop-at troop count on attacker" />' +
-            '</div>' +
             '</div>' +
           '</div>' +
           '<div id="control-voice" class="ucp-terminal ucp-control-voice" aria-live="polite">' +
@@ -6464,6 +6698,11 @@ window.initAttackPhase = initAttackPhase;
               '<label id="ucp-voice-number-label" class="ucp-slot-strip-label" for="troops-input">Amount</label>' +
               '<input type="number" id="troops-input" class="ucp-slot-strip-number" disabled value="" title="Amount" />' +
             '</div>' +
+            '</div>' +
+          '</div>' +
+          '<div id="attack-dev-row-strip" class="ucp-slot-strip attack-dev-row-strip" aria-label="Developer controls">' +
+            '<div class="ucp-slot-strip-main">' +
+            (typeof buildAttackDevRowInnerHtml === 'function' ? buildAttackDevRowInnerHtml() : '') +
             '</div>' +
           '</div>' +
           '<div id="log-text" class="ucp-terminal ucp-combat-log" aria-live="polite"></div>' +

@@ -1,6 +1,7 @@
 /**
  * Persistent right-column HUD: full game panel (stats, control voice, combat log, phase slot).
- * Setup phases use .runtime-hud-root--setup (attack row, slot strip, combat log, and voice report hidden via CSS).
+ * Setup phases use .runtime-hud-root--setup (attack row, dev row, slot strip, combat log, and voice report hidden via CSS).
+ * #attack-dev-row-strip is shown only during data-risque-phase="attack" (see game.css).
  */
 (function () {
   "use strict";
@@ -72,9 +73,6 @@
           '<button type="button" id="attack-step-pause-btn" class="attack-ctl-btn attack-ctl-step-pause" title="Pause or resume">PAUSE</button>' +
           '<button type="button" id="attack-step-cancel-btn" class="attack-ctl-btn attack-ctl-step-cancel" title="Cancel and return to territory selection">CANCEL</button>' +
           "</div>" +
-          '<div class="ucp-slot-strip-num-wrap">' +
-          '<input id="cond-threshold" class="ucp-slot-strip-number" type="number" min="0" value="0" title="Stop blitz when your troops on the attacking territory reach this number (0 = default 5)" aria-label="Conditional blitz stop-at troop count on attacker" />' +
-          "</div>" +
           "</div>" +
         "</div>" +
       "</div>" +
@@ -104,6 +102,13 @@
           '<label id="ucp-voice-number-label" class="ucp-slot-strip-label" for="troops-input">Amount</label>' +
           '<input type="number" id="troops-input" class="ucp-slot-strip-number" disabled value="" title="Amount" />' +
         "</div>" +
+        "</div>" +
+      "</div>" +
+      '<div id="attack-dev-row-strip" class="ucp-slot-strip attack-dev-row-strip" aria-label="Developer controls">' +
+        '<div class="ucp-slot-strip-main">' +
+        (typeof window.buildAttackDevRowInnerHtml === "function"
+          ? window.buildAttackDevRowInnerHtml()
+          : "") +
         "</div>" +
       "</div>" +
       '<div id="log-text" class="ucp-terminal ucp-combat-log" aria-live="polite"></div>' +
@@ -402,6 +407,11 @@
     logText.style.maxHeight = Math.floor(maxPx) + "px";
   }
 
+  function isDeployPhaseHudOverflow() {
+    var ph = document.body && document.body.getAttribute("data-risque-phase");
+    return ph === "deploy" || ph === "deploy1" || ph === "deploy2" || ph === "con-deploy";
+  }
+
   function syncPosition() {
     var root = document.getElementById("runtime-hud-root");
     if (!root) return;
@@ -435,8 +445,16 @@
     } else if (root.classList.contains("runtime-hud-root--setup")) {
       /* No column scrollbar — selection UI fits under voice without inner scroll */
       root.style.maxHeight = "none";
-      root.style.overflowY = "visible";
-      root.style.overflowX = "hidden";
+      if (isDeployPhaseHudOverflow()) {
+        /* Shorthand: overflow-x hidden + overflow-y visible computes visible→auto (scrollbar). */
+        root.style.overflow = "visible";
+        root.style.overflowY = "";
+        root.style.overflowX = "";
+      } else {
+        root.style.overflowY = "visible";
+        root.style.overflowX = "hidden";
+        root.style.overflow = "";
+      }
     } else if (root.classList.contains("runtime-hud-root--cardplay-panel-only")) {
       root.style.maxHeight = "none";
       /* Shorthand: overflow-x hidden + overflow-y visible computes visible→auto (scrollbar). */

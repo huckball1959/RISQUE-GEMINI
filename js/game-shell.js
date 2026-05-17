@@ -4322,6 +4322,42 @@
     _pubBook.shelfStagingKey = null;
   }
 
+  /** Drop stale cardplay book proc / override when entering live map phases (reinforce, attack, …). */
+  function risqueStripStaleCardplayBookForMapPhase(gs) {
+    if (!gs) return;
+    var ph = String(gs.phase || "");
+    if (
+      ph === "reinforce" ||
+      ph === "attack" ||
+      ph === "receivecard" ||
+      ph === "deploy" ||
+      ph === "deploy1" ||
+      ph === "deploy2" ||
+      ph === "income" ||
+      ph === "con-income" ||
+      ph === "conquer" ||
+      ph === "con-deploy" ||
+      ph === "con-transfertroops" ||
+      ph === "con-receivecard"
+    ) {
+      if (gs.risquePublicBookProcessing) {
+        try {
+          delete gs.risquePublicBookProcessing;
+        } catch (eProc) {
+          /* ignore */
+        }
+      }
+      if (
+        _pubBook.displayTroopMap ||
+        _pubBook.skipTerritoryRedraw ||
+        _pubBook.seq != null ||
+        _pubBook.phase !== "idle"
+      ) {
+        resetPublicBookSequence();
+      }
+    }
+  }
+
   /** Clears delayed ack for static (non–book-step) cardplay recap on TV — host button stays grey until this fires or book anim ends. */
   function risquePublicClearStaticRecapAckTimer() {
     if (window.__risqueStaticRecapAckT) {
@@ -4332,6 +4368,7 @@
 
   function risquePublicBookSequenceOnIncomingState(gs) {
     if (!gs) return;
+    risqueStripStaleCardplayBookForMapPhase(gs);
     /* Wayback / replay-machine mirrors board frames with risqueReplayPlaybackActive — skip TV cardplay book engine. */
     if (gs.risqueReplayPlaybackActive) {
       if (
@@ -7116,6 +7153,10 @@
       ];
       normalized.turnOrder = ["Player 1", "Player 2"];
       normalized.currentPlayer = "Player 1";
+    }
+    if (window.gameUtils && typeof window.gameUtils.sanitizeTransientState === "function") {
+      var sanitizedLoad = window.gameUtils.sanitizeTransientState(normalized);
+      normalized = sanitizedLoad.state;
     }
     return normalized;
   }

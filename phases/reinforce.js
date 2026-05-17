@@ -7,6 +7,12 @@ let troopsToMove = 1;
 let moveMade = false;
 let keyboardBuffer = '';
 let reinforceWheelHandler = null;
+let reinforceCommitWasSplit = false;
+/** Set when SPLIT pre-applied balanced troop counts; confirmReinforceMove skips transfer math. */
+let reinforceCommitBalancedSplit = false;
+let reinforceSplitDestTroopsBefore = null;
+/** Pending balanced split (shown on map until confirm or cancel). */
+let reinforceSplitPending = null;
 
 /** Troops required on a territory to resist cardplay remove-2 (see cardplay: only if troops > 2). */
 const RISQUE_REINFORCE_PROTECT_TROOPS = 3;
@@ -66,6 +72,16 @@ function reinforceSaveState() {
  */
 function syncReinforcePreviewToGameState() {
   if (!window.gameState) return;
+  if (reinforceSplitPending && selectedSource && selectedDestination) {
+    window.gameState.risqueReinforcePreview = {
+      mode: 'balanced',
+      source: selectedSource,
+      destination: selectedDestination,
+      sourceTroops: reinforceSplitPending.targetFrom,
+      destinationTroops: reinforceSplitPending.targetTo
+    };
+    return;
+  }
   if (moveMade || !selectedSource || !selectedDestination || troopsToMove < 1) {
     if (window.gameState.risqueReinforcePreview) {
       delete window.gameState.risqueReinforcePreview;
@@ -212,7 +228,9 @@ function refreshReinforceCompactHud() {
   const a1 = document.getElementById('reinforce-btn-allbut1');
   const a3 = document.getElementById('reinforce-btn-allbut3');
   const protect = document.getElementById('reinforce-btn-protect');
+  const split = document.getElementById('reinforce-btn-split');
   const troopPrompt = !!window.__risqueReinforceTroopPromptActive;
+  const splitConfirm = !!reinforceSplitPending;
   if (moveMade) {
     if (status) {
       status.textContent = 'Reinforcement finished — continuing…';
@@ -234,14 +252,19 @@ function refreshReinforceCompactHud() {
     if (a1) a1.disabled = true;
     if (a3) a3.disabled = true;
     if (protect) protect.disabled = true;
+    if (split) split.disabled = true;
     const prDone = document.getElementById('reinforce-row-pick-hint');
     if (prDone) prDone.hidden = true;
     reinforceSetPickHintPulse(false);
     return;
   }
-  if (skip) skip.disabled = false;
-  if (reset) reset.disabled = !(selectedSource || selectedDestination || troopPrompt);
-  if (troopPrompt) {
+  if (skip) skip.disabled = splitConfirm;
+  if (reset) {
+    reset.disabled =
+      moveMade ||
+      (!(selectedSource || selectedDestination) && !troopPrompt && !splitConfirm);
+  }
+  if (troopPrompt || splitConfirm) {
     if (r1) r1.disabled = false;
     if (cm) cm.disabled = false;
   } else if (r1) {
@@ -250,12 +273,16 @@ function refreshReinforceCompactHud() {
   if (protect) {
     protect.disabled = !(selectedSource && selectedDestination);
   }
+  if (split) {
+    split.disabled = !(selectedSource && selectedDestination);
+  }
 
   const pickRow = document.getElementById('reinforce-row-pick-hint');
   const hintEl = document.getElementById('reinforce-pick-hint');
   if (pickRow && hintEl) {
-    pickRow.hidden = false;
-    if (troopPrompt) {
+    pickRow.hidden = splitConfirm;
+    if (!pickRow.hidden) {
+    if (troopPrompt && !splitConfirm) {
       reinforceSetPickHintPulse(false);
     } else if (!selectedSource) {
       reinforceSetPickHintPulse(true);
@@ -264,6 +291,7 @@ function refreshReinforceCompactHud() {
     } else {
       reinforceSetPickHintPulse(false);
     }
+    }
   } else {
     reinforceSetPickHintPulse(false);
   }
@@ -271,14 +299,31 @@ function refreshReinforceCompactHud() {
   if (status) {
     const fromN = selectedSource ? reinforcePrettyTerritory(selectedSource) : '—';
     const toN = selectedDestination ? reinforcePrettyTerritory(selectedDestination) : '—';
-    status.textContent =
-      'FROM: ' +
-      fromN +
-      '\nTO: ' +
-      toN +
-      '\nMOVE: ' +
-      String(troopsToMove) +
-      ' (wheel adjusts when both territories selected)';
+    if (splitConfirm && reinforceSplitPending) {
+      status.textContent =
+        'SPLIT: ' +
+        fromN +
+        ' ' +
+        reinforceSplitPending.sourceT +
+        '→' +
+        reinforceSplitPending.targetFrom +
+        ' · ' +
+        toN +
+        ' ' +
+        reinforceSplitPending.destT +
+        '→' +
+        reinforceSplitPending.targetTo +
+        '\nBACK = adjust · CONFIRM SPLIT = apply';
+    } else {
+      status.textContent =
+        'FROM: ' +
+        fromN +
+        '\nTO: ' +
+        toN +
+        '\nMOVE: ' +
+        String(troopsToMove) +
+        ' (wheel adjusts when both territories selected)';
+    }
   }
   reinforceSyncPublicVoice();
 }
@@ -315,11 +360,13 @@ function bindReinforceCompactHud() {
   const reset = document.getElementById('reinforce-btn-reset');
   const r1 = document.getElementById('reinforce-btn-r1third');
   const protect = document.getElementById('reinforce-btn-protect');
+  const split = document.getElementById('reinforce-btn-split');
   if (!skip || !reset || !r1) return;
   skip.onclick = () => reinforceCompactSkip();
   reset.onclick = () => resetReinforceSelection();
   r1.onclick = () => confirmReinforceMove();
   if (protect) protect.onclick = () => confirmReinforceProtect();
+  if (split) split.onclick = () => confirmReinforceSplit();
   refreshReinforceCompactHud();
 }
 
@@ -349,7 +396,7 @@ function reinforceFindPromptButton(buttons, needle) {
             .toLowerCase()
             .trim()
         : '';
-    if (lab === n) return buttons[j];
+    if (lab === n || (n && lab.indexOf(n) === 0)) return buttons[j];
   }
   return null;
 }
@@ -388,7 +435,7 @@ window.risqueReinforceHostApplyPrompt = function (buttons) {
   }
 
   var L = buttons && Array.isArray(buttons) ? buttons.length : 0;
-  window.__risqueReinforceTroopPromptActive = L === 4;
+  window.__risqueReinforceTroopPromptActive = L === 4 || L === 2;
 
   if (L === 0) {
     if (rowTroop) {
@@ -430,10 +477,53 @@ window.risqueReinforceHostApplyPrompt = function (buttons) {
     return;
   }
 
-  if (L === 4) {
+  if (L === 2) {
+    var rowTroopSplit = rowTroop && rowTroop.querySelector('.reinforce-row--troop-split');
     if (rowTroop) {
       rowTroop.hidden = false;
       rowTroop.removeAttribute('hidden');
+    }
+    if (rowTroopSplit) {
+      rowTroopSplit.hidden = true;
+      rowTroopSplit.setAttribute('hidden', 'hidden');
+    }
+    var bBack = reinforceFindPromptButton(buttons, 'back') || buttons[0];
+    var bSplitOk =
+      reinforceFindPromptButton(buttons, 'confirm split') ||
+      reinforceFindPromptButton(buttons, 'confirm') ||
+      buttons[1];
+    r1.textContent = String((bBack && bBack.label) || 'BACK').toUpperCase();
+    r1.onclick = bBack && bBack.onClick ? bBack.onClick : null;
+    r1.disabled = !!(bBack && bBack.disabled);
+    if (a1) {
+      a1.onclick = null;
+      a1.disabled = true;
+    }
+    if (a3) {
+      a3.onclick = null;
+      a3.disabled = true;
+    }
+    if (cm) {
+      cm.textContent = 'CONFIRM SPLIT';
+      cm.onclick = bSplitOk && bSplitOk.onClick ? bSplitOk.onClick : null;
+      cm.disabled = !!(bSplitOk && bSplitOk.disabled);
+      cm.hidden = false;
+      cm.removeAttribute('hidden');
+    }
+    wireTroopNumRow(false);
+    refreshReinforceCompactHud();
+    return;
+  }
+
+  if (L === 4) {
+    var rowTroopSplit4 = rowTroop && rowTroop.querySelector('.reinforce-row--troop-split');
+    if (rowTroop) {
+      rowTroop.hidden = false;
+      rowTroop.removeAttribute('hidden');
+    }
+    if (rowTroopSplit4) {
+      rowTroopSplit4.hidden = false;
+      rowTroopSplit4.removeAttribute('hidden');
     }
     var bAll1 = reinforceFindPromptButton(buttons, 'ALL BUT 1');
     var bAll3 = reinforceFindPromptButton(buttons, 'ALL BUT 3');
@@ -601,6 +691,8 @@ function reinforceProceedAfterReinforce() {
 
 function resetReinforceSelection() {
   if (moveMade) return;
+  reinforceSplitPending = null;
+  reinforceClearSplitCommitFlags();
   selectedSource = null;
   selectedDestination = null;
   sourceTerritory = null;
@@ -631,9 +723,11 @@ function resetReinforceSelection() {
   var sk = document.getElementById('reinforce-btn-skip');
   var rs = document.getElementById('reinforce-btn-reset');
   var pr = document.getElementById('reinforce-btn-protect');
+  var sp = document.getElementById('reinforce-btn-split');
   if (sk) sk.onclick = function () { reinforceCompactSkip(); };
   if (rs) rs.onclick = function () { resetReinforceSelection(); };
   if (pr) pr.onclick = function () { confirmReinforceProtect(); };
+  if (sp) sp.onclick = function () { confirmReinforceSplit(); };
   if (window.gameState && window.gameState.risqueReinforcePreview) {
     delete window.gameState.risqueReinforcePreview;
   }
@@ -709,30 +803,193 @@ function confirmReinforceProtect() {
   confirmReinforceMove();
 }
 
+function reinforceComputeSplitPlan(liveSource, liveDestination) {
+  const sourceT = Math.floor(Number(liveSource.troops) || 0);
+  const destT = Math.floor(Number(liveDestination.troops) || 0);
+  const total = sourceT + destT;
+  if (total < 2) {
+    return { ok: false, message: 'Cannot split — need at least 2 troops between the two territories.' };
+  }
+  const targetFrom = Math.floor(total / 2);
+  const targetTo = total - targetFrom;
+  if (targetFrom < 1 || targetTo < 1) {
+    return { ok: false, message: 'Cannot split — each territory must keep at least 1 troop.' };
+  }
+  return { ok: true, sourceT, destT, targetFrom, targetTo, total };
+}
+
+function reinforceMakeSplitConfirmButtons() {
+  return [
+    { label: 'Back', onClick: () => cancelReinforceSplitConfirm() },
+    { label: 'Confirm split', onClick: () => commitReinforceSplit() }
+  ];
+}
+
+function cancelReinforceSplitConfirm() {
+  if (moveMade) return;
+  reinforceSplitPending = null;
+  if (window.gameState && window.gameState.risqueReinforcePreview) {
+    delete window.gameState.risqueReinforcePreview;
+  }
+  if (!selectedSource || !selectedDestination) {
+    resetReinforceSelection();
+    return;
+  }
+  const livePlayer = getLiveCurrentPlayer();
+  const liveSource = livePlayer && livePlayer.territories.find(t => t.name === selectedSource);
+  if (!liveSource) {
+    resetReinforceSelection();
+    return;
+  }
+  const maxM = Math.max(0, Math.floor(Number(liveSource.troops) || 0) - 1);
+  const fromN = reinforcePrettyTerritory(selectedSource);
+  const toN = reinforcePrettyTerritory(selectedDestination);
+  reinforceShowPrompt(
+    `Adjust troops to move from ${fromN} to ${toN}.`,
+    reinforceMakeTroopPromptButtons(maxM),
+    reinforceTroopVoiceOptions(maxM),
+    'Use SPLIT again to balance both territories evenly.'
+  );
+  if (typeof window.risqueReinforceHostApplyPrompt === 'function') {
+    window.risqueReinforceHostApplyPrompt(reinforceMakeTroopPromptButtons(maxM));
+  }
+  renderReinforcePreview();
+  refreshReinforceCompactHud();
+}
+
+/** Show split preview + confirm before committing (BACK / RESET / CONFIRM SPLIT). */
+function confirmReinforceSplit() {
+  if (moveMade || !selectedSource || !selectedDestination) return;
+  const livePlayer = getLiveCurrentPlayer();
+  if (!livePlayer || !window.gameState) return;
+  const liveSource = livePlayer.territories.find(t => t.name === selectedSource);
+  const liveDestination = livePlayer.territories.find(t => t.name === selectedDestination);
+  if (!liveSource || !liveDestination) return;
+
+  const adj = window.gameUtils.getAdjacencies(selectedSource).includes(selectedDestination);
+  const byAerial = reinforceAerialConnects(window.gameState, selectedSource, selectedDestination);
+  if (!adj && !byAerial) {
+    reinforceShowPrompt(
+      'Cannot split — destination must be adjacent (or linked by your aerial bridge).',
+      [{ label: 'Cancel', onClick: resetReinforceSelection }],
+      null,
+      'Territory must be adjacent (or at the other end of your aerial link).'
+    );
+    refreshReinforceCompactHud();
+    return;
+  }
+
+  const plan = reinforceComputeSplitPlan(liveSource, liveDestination);
+  if (!plan.ok) {
+    reinforceShowPrompt(
+      plan.message,
+      [{ label: 'OK', onClick: () => {} }],
+      null,
+      plan.message
+    );
+    refreshReinforceCompactHud();
+    return;
+  }
+
+  const fromN = reinforcePrettyTerritory(selectedSource);
+  const toN = reinforcePrettyTerritory(selectedDestination);
+  reinforceSplitPending = {
+    sourceT: plan.sourceT,
+    destT: plan.destT,
+    targetFrom: plan.targetFrom,
+    targetTo: plan.targetTo
+  };
+  sourceTerritory = liveSource;
+  destinationTerritory = liveDestination;
+  renderReinforcePreview();
+
+  const msg =
+    '<strong>CONFIRM SPLIT</strong><br>' +
+    `FROM <strong>${fromN}</strong>: ${plan.sourceT} → <strong>${plan.targetFrom}</strong> troops<br>` +
+    `TO <strong>${toN}</strong>: ${plan.destT} → <strong>${plan.targetTo}</strong> troops<br>` +
+    `(${plan.total} combined → ${plan.targetFrom} each; BACK to adjust, RESET to clear picks)`;
+  const splitBtns = reinforceMakeSplitConfirmButtons();
+  reinforceShowPrompt(msg, splitBtns, null, '');
+  if (typeof window.risqueReinforceHostApplyPrompt === 'function') {
+    window.risqueReinforceHostApplyPrompt(splitBtns);
+  }
+  refreshReinforceCompactHud();
+}
+
+function commitReinforceSplit() {
+  if (moveMade || !reinforceSplitPending || !selectedSource || !selectedDestination) return;
+  const livePlayer = getLiveCurrentPlayer();
+  if (!livePlayer || !window.gameState) return;
+  const liveSource = livePlayer.territories.find(t => t.name === selectedSource);
+  const liveDestination = livePlayer.territories.find(t => t.name === selectedDestination);
+  if (!liveSource || !liveDestination) return;
+
+  const p = reinforceSplitPending;
+  reinforceSplitDestTroopsBefore = p.destT;
+  liveSource.troops = p.targetFrom;
+  liveDestination.troops = p.targetTo;
+  troopsToMove = Math.abs(p.targetTo - p.destT);
+  reinforceSplitPending = null;
+  reinforceCommitWasSplit = true;
+  reinforceCommitBalancedSplit = true;
+  if (typeof window.risqueDismissAttackPrompt === 'function') {
+    window.risqueDismissAttackPrompt();
+  }
+  window.__risqueReinforceTroopPromptActive = false;
+  if (typeof window.risqueReinforceHostApplyPrompt === 'function') {
+    window.risqueReinforceHostApplyPrompt([]);
+  }
+  confirmReinforceMove();
+}
+
+function reinforceClearSplitCommitFlags() {
+  reinforceCommitWasSplit = false;
+  reinforceCommitBalancedSplit = false;
+  reinforceSplitDestTroopsBefore = null;
+}
+
 function confirmReinforceMove() {
-  if (!selectedSource || !selectedDestination) return;
+  if (!selectedSource || !selectedDestination) {
+    reinforceClearSplitCommitFlags();
+    return;
+  }
   if (window.gameState && window.gameState.risqueReinforcePreview) {
     delete window.gameState.risqueReinforcePreview;
   }
   const livePlayer = getLiveCurrentPlayer();
-  if (!livePlayer) return;
-  const liveSource = livePlayer.territories.find(t => t.name === selectedSource);
-  const liveDestination = livePlayer.territories.find(t => t.name === selectedDestination);
-  if (!liveSource || !liveDestination) return;
-  const max = liveSource.troops - 1;
-  if (troopsToMove < 1 || troopsToMove > max) {
-    reinforceShowPrompt(
-      `Adjust troops to move from ${selectedSource.replace(/_/g, ' ')} to ${selectedDestination.replace(/_/g, ' ')}.`,
-      reinforceMakeTroopPromptButtons(max),
-      reinforceTroopVoiceOptions(max),
-      `Must move 1 to ${max} troops.`
-    );
+  if (!livePlayer) {
+    reinforceClearSplitCommitFlags();
     return;
   }
+  const liveSource = livePlayer.territories.find(t => t.name === selectedSource);
+  const liveDestination = livePlayer.territories.find(t => t.name === selectedDestination);
+  if (!liveSource || !liveDestination) {
+    reinforceClearSplitCommitFlags();
+    return;
+  }
+  const destTroopBefore =
+    reinforceSplitDestTroopsBefore != null
+      ? reinforceSplitDestTroopsBefore
+      : Number(liveDestination.troops || 0);
 
-  const destTroopBefore = Number(liveDestination.troops || 0);
-  liveSource.troops = Number(liveSource.troops || 0) - Number(troopsToMove || 0);
-  liveDestination.troops = destTroopBefore + Number(troopsToMove || 0);
+  if (!reinforceCommitBalancedSplit) {
+    const max = liveSource.troops - 1;
+    if (troopsToMove < 1 || troopsToMove > max) {
+      reinforceClearSplitCommitFlags();
+      reinforceShowPrompt(
+        `Adjust troops to move from ${selectedSource.replace(/_/g, ' ')} to ${selectedDestination.replace(/_/g, ' ')}.`,
+        reinforceMakeTroopPromptButtons(max),
+        reinforceTroopVoiceOptions(max),
+        `Must move 1 to ${max} troops.`
+      );
+      return;
+    }
+    liveSource.troops = Number(liveSource.troops || 0) - Number(troopsToMove || 0);
+    liveDestination.troops = destTroopBefore + Number(troopsToMove || 0);
+  } else {
+    reinforceCommitBalancedSplit = false;
+    reinforceSplitDestTroopsBefore = null;
+  }
   livePlayer.troopsTotal = livePlayer.territories.reduce((sum, t) => sum + Number(t.troops || 0), 0);
   reinforceCurrentPlayer = livePlayer;
   window.gameState.phase = 'reinforce';
@@ -744,10 +1001,11 @@ function confirmReinforceMove() {
   sourceTerritory = null;
   destinationTerritory = null;
   reinforceSaveState();
-  reinforceLog('Reinforcement confirmed', {
+  reinforceLog(reinforceCommitWasSplit ? 'Reinforcement split confirmed' : 'Reinforcement confirmed', {
     source: fromName,
     destination: toName,
     moved: troopsToMove,
+    split: reinforceCommitWasSplit,
     sourceNow: liveSource.troops,
     destinationNow: liveDestination.troops
   });
@@ -756,10 +1014,21 @@ function confirmReinforceMove() {
       destTroopBefore < RISQUE_REINFORCE_PROTECT_TROOPS && liveDestination.troops >= RISQUE_REINFORCE_PROTECT_TROOPS
         ? ` (protected to ${RISQUE_REINFORCE_PROTECT_TROOPS})`
         : '';
-    window.risqueAppendGameLog(
-      `${livePlayer.name} transfers ${troopsToMove} troops to ${reinforcePrettyTerritory(toName)}${protectNote}.`,
-      'battle'
-    );
+    const wasSplit = reinforceCommitWasSplit;
+    reinforceCommitWasSplit = false;
+    if (wasSplit) {
+      window.risqueAppendGameLog(
+        `${livePlayer.name} splits evenly: ${reinforcePrettyTerritory(fromName)} ${liveSource.troops}, ${reinforcePrettyTerritory(toName)} ${liveDestination.troops}${protectNote}.`,
+        'battle'
+      );
+    } else {
+      window.risqueAppendGameLog(
+        `${livePlayer.name} transfers ${troopsToMove} troops to ${reinforcePrettyTerritory(toName)}${protectNote}.`,
+        'battle'
+      );
+    }
+  } else {
+    reinforceCommitWasSplit = false;
   }
   var REINF_PULSE_MS = 1000;
   if (window.gameState) {
@@ -969,10 +1238,31 @@ window.initReinforcePhase = initReinforcePhase;
 (function () {
   "use strict";
 
+  function reinforceRestoreCanvasFromTransitionHold() {
+    var hold = document.getElementById("risque-income-transition-hold");
+    if (hold && hold.parentNode) hold.parentNode.removeChild(hold);
+    var canvas = document.getElementById("canvas");
+    if (!canvas) return;
+    try {
+      canvas.style.visibility = "";
+      canvas.style.transition = "";
+      canvas.removeAttribute("aria-hidden");
+    } catch (eCv) {
+      /* ignore */
+    }
+  }
+
   function mount(stageHost, opts) {
     opts = opts || {};
     var uiOverlay = document.getElementById("ui-overlay");
     if (!uiOverlay || !window.gameUtils) return;
+
+    reinforceRestoreCanvasFromTransitionHold();
+    try {
+      delete window.__risqueSuppressHostMapRedraw;
+    } catch (eSup) {
+      /* ignore */
+    }
 
     /* Paint the board from shell state before HUD slot swap so the map never sits empty while async init ran. */
     if (
@@ -1025,6 +1315,7 @@ window.initReinforcePhase = initReinforcePhase;
           '<div class="reinforce-row reinforce-row--reset-num">' +
           '<button type="button" id="reinforce-btn-reset" class="reinforce-btn-compact">RESET</button>' +
           '<button type="button" id="reinforce-btn-protect" class="reinforce-btn-compact reinforce-btn-protect" title="Move troops from source so destination has 3 (cardplay protected)">PROTECT</button>' +
+          '<button type="button" id="reinforce-btn-split" class="reinforce-btn-compact reinforce-btn-split" title="Balance FROM + TO evenly; confirm before finishing reinforce">SPLIT</button>' +
           '<div class="reinforce-troops-holder" id="reinforce-troops-holder" hidden aria-hidden="true"></div>' +
           "</div>" +
           '<div class="reinforce-row reinforce-row--confirm-only">' +

@@ -2178,20 +2178,6 @@
         checkCardStatus();
         return;
       }
-      const action = await showPopup('Book complete. Process cards.', null, false, false, 'continueOnly');
-      if (!action) {
-        setCardplayError("Book cancelled");
-        isBookSelectionMode = false;
-        selectedCards = [];
-        document.querySelectorAll(".card").forEach(function (card) {
-          card.classList.remove("selected");
-        });
-        if (isCardplayHudCompact()) {
-          rebuildCardplayHandAndStaging();
-        }
-        checkCardStatus();
-        return;
-      }
       setCardplayError("");
       isBookSelectionMode = false;
       const bookPlayedCard = {

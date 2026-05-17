@@ -807,6 +807,9 @@ html.risque-public-wayback-mirror.risque-view-public #risque-main-panel-body {
 .runtime-hud-root--setup #ucp-slot-strip {
   display: none !important;
 }
+.runtime-hud-root--setup #attack-dev-row-strip {
+  display: none !important;
+}
 .runtime-hud-root--setup #control-voice-report {
   display: none !important;
 }
@@ -1625,7 +1628,8 @@ html.risque-view-public .risque-public-ghost-replay-save {
 
 .hud-attack-chrome.hud-chrome-disabled .attack-dice-columns,
 .hud-attack-chrome.hud-chrome-disabled .attack-toolbar-strip .ucp-slot-strip-buttons,
-.hud-attack-chrome.hud-chrome-disabled .attack-toolbar-strip .ucp-slot-strip-num-wrap {
+.hud-attack-chrome.hud-chrome-disabled .attack-dev-row-strip .ucp-slot-strip-buttons,
+.hud-attack-chrome.hud-chrome-disabled .attack-dev-row-cond {
   opacity: 0.45;
 }
 
@@ -3078,6 +3082,149 @@ body.risque-view-host .risque-phase-content .deploy1-deploy-actions.deploy1-depl
   text-transform: uppercase;
   letter-spacing: 0.02em;
   line-height: 1.08;
+}
+
+body.risque-view-host .risque-phase-content .deploy1-action-btn-protect-all {
+  background: #0f3d2e !important;
+  border-color: #34d399 !important;
+  color: #ecfdf5 !important;
+  flex: 1.15 1 0;
+}
+
+body.risque-view-host .risque-phase-content .deploy1-action-btn-protect-all:hover:not(:disabled) {
+  background: #14532d !important;
+  border-color: #6ee7b7 !important;
+  filter: brightness(1.04);
+}
+
+body.risque-view-host .risque-phase-content .deploy1-deploy-actions.deploy1-deploy-actions--hud-row .deploy1-action-btn-protect-all {
+  font-size: 11px;
+  letter-spacing: 0;
+  padding: 3px 1px !important;
+}
+
+.deploy-protect-all-wrap {
+  position: relative;
+  display: flex;
+  flex: 1.15 1 0;
+  min-width: 0;
+  align-items: stretch;
+}
+
+.deploy-protect-all-wrap .deploy1-action-btn-protect-all {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.deploy-protect-all-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: visible;
+  max-height: none;
+  padding: 4px;
+  background: #0a0a0a;
+  border: 2px solid #34d399;
+  border-radius: 4px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.65);
+}
+
+.deploy-protect-all-menu.deploy-protect-all-menu--fixed {
+  position: fixed;
+  z-index: 100003;
+  pointer-events: auto;
+}
+
+/* Deploy turn HUD: avoid overflow-x hidden + overflow-y visible → auto scrollbar when protect-all menu opens */
+body[data-risque-phase="deploy"] #runtime-hud-root.runtime-hud-root--setup,
+body[data-risque-phase="deploy1"] #runtime-hud-root.runtime-hud-root--setup,
+body[data-risque-phase="deploy2"] #runtime-hud-root.runtime-hud-root--setup,
+body[data-risque-phase="con-deploy"] #runtime-hud-root.runtime-hud-root--setup,
+html.risque-view-host body[data-risque-phase="deploy"] #runtime-hud-root.runtime-hud-root--setup,
+html.risque-view-host body[data-risque-phase="deploy1"] #runtime-hud-root.runtime-hud-root--setup,
+html.risque-view-host body[data-risque-phase="deploy2"] #runtime-hud-root.runtime-hud-root--setup,
+html.risque-view-host body[data-risque-phase="con-deploy"] #runtime-hud-root.runtime-hud-root--setup {
+  overflow: visible !important;
+  max-height: none !important;
+}
+
+body[data-risque-phase="deploy"] #runtime-hud-root.runtime-hud-root--setup #hud-main-panel,
+body[data-risque-phase="deploy1"] #runtime-hud-root.runtime-hud-root--setup #hud-main-panel,
+body[data-risque-phase="deploy2"] #runtime-hud-root.runtime-hud-root--setup #hud-main-panel,
+body[data-risque-phase="con-deploy"] #runtime-hud-root.runtime-hud-root--setup #hud-main-panel,
+body[data-risque-phase="deploy"] #runtime-hud-root.runtime-hud-root--setup .attack-control-panel,
+body[data-risque-phase="deploy1"] #runtime-hud-root.runtime-hud-root--setup .attack-control-panel,
+body[data-risque-phase="deploy2"] #runtime-hud-root.runtime-hud-root--setup .attack-control-panel,
+body[data-risque-phase="con-deploy"] #runtime-hud-root.runtime-hud-root--setup .attack-control-panel,
+body[data-risque-phase="deploy"] #runtime-hud-root.runtime-hud-root--setup .risque-phase-content,
+body[data-risque-phase="deploy1"] #runtime-hud-root.runtime-hud-root--setup .risque-phase-content,
+body[data-risque-phase="deploy2"] #runtime-hud-root.runtime-hud-root--setup .risque-phase-content,
+body[data-risque-phase="con-deploy"] #runtime-hud-root.runtime-hud-root--setup .risque-phase-content,
+body[data-risque-phase="deploy"] .deploy2-compact-root,
+body[data-risque-phase="deploy1"] .deploy2-compact-root,
+body[data-risque-phase="deploy2"] .deploy2-compact-root,
+body[data-risque-phase="con-deploy"] .deploy2-compact-root,
+html.risque-view-host body[data-risque-phase="deploy"] #runtime-hud-root.runtime-hud-root--setup #hud-main-panel,
+html.risque-view-host body[data-risque-phase="deploy1"] #runtime-hud-root.runtime-hud-root--setup #hud-main-panel,
+html.risque-view-host body[data-risque-phase="deploy2"] #runtime-hud-root.runtime-hud-root--setup #hud-main-panel,
+html.risque-view-host body[data-risque-phase="con-deploy"] #runtime-hud-root.runtime-hud-root--setup #hud-main-panel,
+html.risque-view-host body[data-risque-phase="deploy"] #runtime-hud-root.runtime-hud-root--setup .attack-control-panel,
+html.risque-view-host body[data-risque-phase="deploy1"] #runtime-hud-root.runtime-hud-root--setup .attack-control-panel,
+html.risque-view-host body[data-risque-phase="deploy2"] #runtime-hud-root.runtime-hud-root--setup .attack-control-panel,
+html.risque-view-host body[data-risque-phase="con-deploy"] #runtime-hud-root.runtime-hud-root--setup .attack-control-panel,
+html.risque-view-host body[data-risque-phase="deploy"] #runtime-hud-root.runtime-hud-root--setup .risque-phase-content,
+html.risque-view-host body[data-risque-phase="deploy1"] #runtime-hud-root.runtime-hud-root--setup .risque-phase-content,
+html.risque-view-host body[data-risque-phase="deploy2"] #runtime-hud-root.runtime-hud-root--setup .risque-phase-content,
+html.risque-view-host body[data-risque-phase="con-deploy"] #runtime-hud-root.runtime-hud-root--setup .risque-phase-content,
+html.risque-view-host body[data-risque-phase="deploy"] .deploy2-compact-root,
+html.risque-view-host body[data-risque-phase="deploy1"] .deploy2-compact-root,
+html.risque-view-host body[data-risque-phase="deploy2"] .deploy2-compact-root,
+html.risque-view-host body[data-risque-phase="con-deploy"] .deploy2-compact-root {
+  overflow: visible !important;
+  max-height: none !important;
+}
+
+body.risque-view-host .risque-phase-content .deploy2-actions,
+body.risque-view-host .risque-phase-content .deploy1-deploy-actions {
+  overflow: visible;
+}
+
+.deploy-protect-all-menu[hidden] {
+  display: none !important;
+}
+
+.deploy-protect-all-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  border: 1px solid #1f4d3a;
+  border-radius: 3px;
+  background: #0f3d2e;
+  color: #ecfdf5;
+}
+
+.deploy-protect-all-menu-item:hover:not(:disabled) {
+  background: #14532d;
+  border-color: #6ee7b7;
+}
+
+.deploy-protect-all-menu-item:disabled,
+.deploy-protect-all-menu-item.deploy-protect-all-menu-item--inactive {
+  opacity: 0.4;
+  cursor: not-allowed;
+  color: #94a3b8;
+  background: #1a1a1a;
+  border-color: #334155;
+}
+
+body.risque-view-host .risque-phase-content .deploy-protect-all-wrap .deploy1-action-btn-protect-all {
+  flex: 1 1 auto;
 }
 
 /* Reinforce phase — HUD phase slot (terminal green on black) */
@@ -4669,6 +4816,74 @@ html.risque-view-host
   min-width: 0;
 }
 
+/* Flat 6×2 grid: post-CLEAR stack spans both rows (AERIAL or Q BLITZ L3/T3) */
+.attack-toolbar-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-rows: auto auto;
+  gap: 6px;
+}
+
+.attack-toolbar-grid .attack-toolbar-row--primary,
+.attack-toolbar-grid .attack-toolbar-row--secondary {
+  display: contents;
+}
+
+.attack-toolbar-grid-roll {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.attack-toolbar-grid-blitz {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.attack-toolbar-grid-campaign {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+.attack-toolbar-grid-clear {
+  grid-column: 4;
+  grid-row: 1;
+}
+
+.attack-toolbar-grid-stack {
+  grid-column: 5;
+  grid-row: 1 / span 2;
+}
+
+.attack-toolbar-grid-tail {
+  grid-column: 6;
+  grid-row: 1;
+}
+
+.attack-toolbar-grid-qcamp {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.attack-toolbar-grid-spacer-2 {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.attack-toolbar-grid-spacer-3 {
+  grid-column: 3;
+  grid-row: 2;
+}
+
+.attack-toolbar-grid-spacer-4 {
+  grid-column: 4;
+  grid-row: 2;
+}
+
+.attack-toolbar-grid-cond {
+  grid-column: 6;
+  grid-row: 2;
+}
+
 .attack-toolbar-row--6 {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -4679,9 +4894,48 @@ html.risque-view-host
 }
 
 .attack-toolbar-row--6 > .attack-blitz-wrap,
-.attack-toolbar-row--6 > .attack-campaign-wrap {
+.attack-toolbar-row--6 > .attack-campaign-wrap,
+.attack-toolbar-row--6 > .attack-toolbar-post-clear-stack {
   position: relative;
   min-width: 0;
+}
+
+/* CLEAR column: stacked AERIAL (when available) or Q BLITZ L3 / T3 */
+.attack-toolbar-post-clear-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  align-self: stretch;
+}
+
+.attack-toolbar-post-clear-stack .attack-toolbar-stack-btn {
+  width: 100%;
+  min-width: 0;
+  flex: 1 1 0;
+  min-height: 42px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: clamp(8px, 0.85vw, 11px);
+  padding: 3px 4px;
+  box-sizing: border-box;
+}
+
+.attack-toolbar-post-clear-stack .attack-ctl-qdev {
+  background: #422006;
+  border-color: #f59e0b;
+  color: #fef3c7;
+  font-weight: 800;
+}
+
+.attack-toolbar-post-clear-stack .attack-ctl-qdev:hover:not(:disabled) {
+  background: #78350f;
+  border-color: #fbbf24;
+}
+
+.attack-toolbar-post-clear-stack .attack-ctl-qdev:disabled {
+  opacity: 0.45;
 }
 
 .attack-toolbar-row--6 .attack-ctl-btn {
@@ -4695,20 +4949,36 @@ html.risque-view-host
   padding: 3px 4px;
 }
 
-.attack-toolbar-row--qdev .attack-ctl-qdev {
+.attack-toolbar-row--secondary .attack-ctl-qdev {
   background: #422006;
   border-color: #f59e0b;
   color: #fef3c7;
   font-weight: 800;
 }
 
-.attack-toolbar-row--qdev .attack-ctl-qdev:hover:not(:disabled) {
+.attack-toolbar-row--secondary .attack-ctl-qdev:hover:not(:disabled) {
   background: #78350f;
   border-color: #fbbf24;
 }
 
-.attack-toolbar-row--qdev .attack-ctl-qdev:disabled {
+.attack-toolbar-row--secondary .attack-ctl-qdev:disabled {
   opacity: 0.45;
+}
+
+.attack-toolbar-row--6 > .ucp-slot-strip-num-wrap {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  flex: none;
+  align-self: stretch;
+  justify-content: center;
+}
+
+.attack-toolbar-row--6 > .ucp-slot-strip-num-wrap .ucp-slot-strip-number {
+  width: 100%;
+  min-height: 42px;
+  height: 42px;
+  max-height: 42px;
 }
 
 .attack-toolbar-row--6 .attack-blitz-wrap > .attack-ctl-btn,
@@ -4726,28 +4996,14 @@ html.risque-view-host
   display: none !important;
 }
 
-.attack-toolbar-row--6 > #aerial-attack-group {
-  grid-column: span 2;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
-}
-
-.attack-toolbar-row--6 #aerial-attack-group .attack-ctl-btn {
-  flex: 1 1 auto;
-  min-height: 0;
-  width: 100%;
-}
-
-/* Dice-row toolbar: match #ucp-slot-strip spacing (gap 10 / 6, space-between) + 76px cond column */
+/* Dice-row toolbar: cond threshold lives in secondary row grid (no side column / third flex line) */
 /* overflow must stay visible — overflow-x: auto clips BLITZ/CAMPAIGN dropdowns (position: absolute below buttons) */
 .attack-control-panel .attack-toolbar-strip .ucp-slot-strip-main {
   align-items: stretch;
   gap: 10px;
   overflow: visible;
   min-width: 0;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 .attack-control-panel .attack-toolbar-strip .attack-ctl-step-pause,
@@ -4943,12 +5199,87 @@ body.risque-view-host:not([data-risque-phase="attack"])
   min-width: 0;
 }
 
-/* Same fixed width as Amount column under control voice */
-.attack-control-panel .attack-toolbar-strip .ucp-slot-strip-num-wrap {
+/* In-grid cond column (secondary row); matches control-voice Amount width when side column */
+.attack-control-panel .attack-toolbar-strip .attack-toolbar-row--6 > .ucp-slot-strip-num-wrap {
+  flex: none;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+}
+
+/* Developer row: below prompt slot strip; cond threshold at end (green column) */
+.attack-dev-row-strip {
+  width: 100%;
+  margin: 4px 0 6px;
+  padding: 0;
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+
+.attack-dev-row-strip .ucp-slot-strip-main {
+  align-items: stretch;
+  gap: 10px;
+}
+
+.attack-dev-row-buttons {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: 6px;
+  min-width: 0;
+  align-items: stretch;
+}
+
+.attack-dev-row-buttons .attack-ctl-dev-label {
+  flex: 0 0 auto;
+  min-width: 4.8em;
+  max-width: 5.5em;
+  min-height: 42px;
+  padding: 3px 5px;
+  font-size: clamp(8px, 0.8vw, 10px);
+  font-weight: 800;
+  background: #334155 !important;
+  color: #94a3b8 !important;
+  border-color: #475569 !important;
+  cursor: default;
+  opacity: 1 !important;
+}
+
+.attack-dev-row-buttons .attack-ctl-qdev {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 42px;
+  background: #422006;
+  border-color: #f59e0b;
+  color: #fef3c7;
+  font-weight: 800;
+  font-size: clamp(8px, 0.82vw, 11px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.attack-dev-row-buttons .attack-ctl-qdev:hover:not(:disabled) {
+  background: #78350f;
+  border-color: #fbbf24;
+}
+
+.attack-dev-row-buttons .attack-ctl-qdev:disabled {
+  opacity: 0.45;
+}
+
+.attack-dev-row-cond {
   flex: 0 0 76px;
   width: 76px;
-  min-width: 0;
-  max-width: 76px;
+  align-self: stretch;
+}
+
+.attack-dev-row-cond .ucp-slot-strip-number {
+  width: 100%;
+  min-height: 42px;
+  height: 42px;
+  max-height: 42px;
 }
 
 .attack-control-panel .attack-toolbar-strip .attack-ctl-btn {
@@ -6430,7 +6761,8 @@ html.risque-view-public body[data-risque-phase="receivecard"] #control-voice.ucp
 
 /* Public TV: show dice readout like host; hide attack controls (no buttons on TV). */
 .risque-view-public #hud-attack-chrome .attack-toolbar-strip,
-.risque-view-public #hud-attack-chrome .attack-step-ctl-wrap {
+.risque-view-public #hud-attack-chrome .attack-step-ctl-wrap,
+.risque-view-public #attack-dev-row-strip {
   display: none !important;
 }
 
@@ -6531,6 +6863,11 @@ body.risque-view-host #hud-attack-chrome .attack-die span {
 /* Host (private): hide dice + attack control strip during income */
 body.risque-view-host[data-risque-phase="income"] #hud-attack-chrome,
 body.risque-view-host[data-risque-phase="con-income"] #hud-attack-chrome {
+  display: none !important;
+}
+
+/* Developer row: attack phase only (not income, deploy, reinforce, etc.) */
+body.risque-view-host:not([data-risque-phase="attack"]) #attack-dev-row-strip {
   display: none !important;
 }
 
@@ -6702,14 +7039,14 @@ body.risque-view-host[data-risque-phase="reinforce"] .reinforce-btn-skip-paired 
   align-self: stretch;
 }
 
-/* Reset | (troops # when moving); full-width confirm on next row */
+/* Reset | Protect | Split | (troops # when moving); full-width confirm on next row */
 body.risque-view-host[data-risque-phase="reinforce"] .reinforce-row--reset-num {
-  grid-template-columns: 1fr minmax(5.5rem, 1.15fr);
+  grid-template-columns: 1fr 1fr 1fr minmax(4rem, 5rem);
   align-items: center;
 }
 
 body.risque-view-host[data-risque-phase="reinforce"] .reinforce-row--reset-num:has(.reinforce-troops-holder[hidden]) {
-  grid-template-columns: 1fr minmax(5.5rem, 1.15fr);
+  grid-template-columns: 1fr 1fr 1fr;
 }
 
 body.risque-view-host[data-risque-phase="reinforce"] .reinforce-btn-protect {
@@ -6724,8 +7061,20 @@ body.risque-view-host[data-risque-phase="reinforce"] .reinforce-btn-protect:hove
   border-color: #6ee7b7;
 }
 
+body.risque-view-host[data-risque-phase="reinforce"] .reinforce-btn-split {
+  background: #1e293b;
+  border-color: #38bdf8;
+  color: #e0f2fe;
+  font-weight: 800;
+}
+
+body.risque-view-host[data-risque-phase="reinforce"] .reinforce-btn-split:hover:not(:disabled) {
+  background: #0c4a6e;
+  border-color: #7dd3fc;
+}
+
 body.risque-view-host[data-risque-phase="reinforce"] .reinforce-row--reset-num:has(.reinforce-troops-holder:not([hidden])) {
-  grid-template-columns: 1fr minmax(5.5rem, 1.15fr) minmax(4rem, 5rem);
+  grid-template-columns: 1fr 1fr 1fr minmax(4rem, 5rem);
 }
 
 body.risque-view-host[data-risque-phase="reinforce"] .reinforce-row--confirm-only {
@@ -6995,7 +7344,9 @@ body.risque-view-host[data-risque-phase="con-income"] #log-text {
 
 /* Host (private): action slot strip + amount row — not used during income */
 body.risque-view-host[data-risque-phase="income"] #ucp-slot-strip,
-body.risque-view-host[data-risque-phase="con-income"] #ucp-slot-strip {
+body.risque-view-host[data-risque-phase="con-income"] #ucp-slot-strip,
+body.risque-view-host[data-risque-phase="income"] #attack-dev-row-strip,
+body.risque-view-host[data-risque-phase="con-income"] #attack-dev-row-strip {
   display: none !important;
 }
 
@@ -7904,6 +8255,59 @@ body.risque-view-host[data-risque-phase="attack"]
   transform-origin: center center;
   will-change: transform, filter, box-shadow;
   animation: risque-cond-input-pulse 0.75s ease-in-out infinite;
+}
+
+/* Attack phase: steady expanded glow on prompt controls — no pulsating / flashing */
+body.risque-view-host[data-risque-phase="attack"] .attack-control-panel .ucp-slot-ctl.risque-confirm-slot-flash {
+  animation: none;
+  box-shadow:
+    0 0 28px 10px rgba(250, 204, 21, 0.95),
+    0 0 48px 18px rgba(250, 204, 21, 0.35),
+    inset 0 0 12px rgba(255, 255, 255, 0.25);
+  filter: brightness(1.25);
+}
+
+body.risque-view-host[data-risque-phase="attack"] .attack-control-panel .ucp-slot-strip.risque-confirm-slot-strip-flash {
+  animation: none;
+  box-shadow:
+    0 0 20px 6px rgba(250, 204, 21, 0.55),
+    inset 0 0 0 1px rgba(250, 204, 21, 0.35);
+  border-radius: 6px;
+}
+
+body.risque-view-host[data-risque-phase="attack"]
+  .attack-control-panel
+  .ucp-slot-ctl.ucp-slot-ctl--pulse-attention:not(:disabled):not(.ucp-slot-empty) {
+  animation: none;
+  transform: scale(1.08);
+  box-shadow:
+    0 0 32px 10px rgba(0, 255, 0, 0.95),
+    0 0 72px 18px rgba(255, 255, 0, 0.35),
+    inset 0 0 12px rgba(255, 255, 255, 0.25);
+  filter: brightness(1.35) saturate(1.2);
+  border-color: #ffff88;
+}
+
+body.risque-view-host[data-risque-phase="attack"]
+  .attack-control-panel
+  .ucp-slot-strip
+  #cond-threshold.ucp-slot-strip-number--pulse-attention:enabled {
+  animation: none;
+  transform: scale(1.09);
+  box-shadow:
+    0 0 36px 14px rgba(255, 255, 0, 0.95),
+    0 0 72px 22px rgba(255, 255, 0, 0.45),
+    inset 0 0 16px rgba(255, 255, 255, 0.35);
+  filter: brightness(1.2) saturate(1.15);
+  border-color: #ffff44;
+}
+
+body.risque-view-host[data-risque-phase="attack"] .attack-campaign-dropdown--needs-choice .attack-menu-tile {
+  animation: none;
+  box-shadow:
+    0 0 20px rgba(250, 204, 21, 0.75),
+    0 0 36px rgba(250, 204, 21, 0.35);
+  border-color: #facc15;
 }
 
 /* Public TV blitz/campaign banner lines: same terminal green as host (#control-voice), not mint. */

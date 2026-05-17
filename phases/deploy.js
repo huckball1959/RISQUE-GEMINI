@@ -9,7 +9,377 @@
 (function () {
   "use strict";
 
+  /** Cardplay-style protection level (matches reinforce PROTECT). */
+  var RISQUE_DEPLOY_PROTECT_TROOPS = 3;
+  var DEPLOY_PROTECT_ALL_EXHAUSTED_MSG =
+    "EXHOSTED ALL TROOPS, FAILED TO PROTECT ALL TERRITORIES";
+
   var STYLE_ID_DEPLOY_TURN = "risque-deploy2-styles-v1";
+
+  function deployContinentDisplayName(contKey) {
+    var gu = window.gameUtils;
+    if (gu && gu.continentDisplayNames && gu.continentDisplayNames[contKey]) {
+      return gu.continentDisplayNames[contKey];
+    }
+    return String(contKey || "").replace(/_/g, " ");
+  }
+
+  function deployTerritoryOwnedInContinent(gameState, territoryName, contKey) {
+    var gu = window.gameUtils;
+    if (!gu || !contKey) return false;
+    var ids = gu.getContinentTerritoryIdsForBoard(gameState, contKey);
+    return ids.indexOf(String(territoryName || "")) >= 0;
+  }
+
+  /** Continent keys where the player holds at least one territory (alphabetical). */
+  function deployListContinentKeysWithPlayerPresence(gameState, player) {
+    var gu = window.gameUtils;
+    if (!gu || !gameState || !player || !Array.isArray(player.territories)) {
+      return [];
+    }
+    var out = [];
+    Object.keys(gu.continents || {}).forEach(function (contKey) {
+      var hasAny = player.territories.some(function (pt) {
+        return pt && deployTerritoryOwnedInContinent(gameState, pt.name, contKey);
+      });
+      if (hasAny) out.push(contKey);
+    });
+    out.sort(function (a, b) {
+      return deployContinentDisplayName(a).localeCompare(deployContinentDisplayName(b));
+    });
+    return out;
+  }
+
+  /** Continents the player fully controls (all territories in the continent). */
+  function deployListPlayerFullyOwnedContinentKeys(gameState, player) {
+    var gu = window.gameUtils;
+    if (!gu || !gameState || !player) {
+      return [];
+    }
+    var keys = [];
+    if (typeof gu.listFullyHeldContinentKeysForPlayer === "function") {
+      keys = gu.listFullyHeldContinentKeysForPlayer(gameState, player);
+    }
+    keys.sort(function (a, b) {
+      return deployContinentDisplayName(a).localeCompare(deployContinentDisplayName(b));
+    });
+    return keys;
+  }
+
+  function deployCollectProtectTargets(territories) {
+    return (territories || [])
+      .map(function (t) {
+        var current = Math.max(0, Math.floor(Number(t.troops) || 0));
+        if (current >= RISQUE_DEPLOY_PROTECT_TROOPS) {
+          return null;
+        }
+        return {
+          territory: t,
+          name: t.name,
+          current: current,
+          needed: RISQUE_DEPLOY_PROTECT_TROOPS - current
+        };
+      })
+      .filter(Boolean)
+      .sort(function (a, b) {
+        if (a.current !== b.current) {
+          return a.current - b.current;
+        }
+        return String(a.name).localeCompare(String(b.name));
+      });
+  }
+
+  /** scopeContinentKey: null / "all" = every owned continent (alphabetical), else one continent key. */
+  function deployCollectProtectTargetsOrdered(gameState, player, scopeContinentKey) {
+    if (!player || !Array.isArray(player.territories)) {
+      return [];
+    }
+    var scope = scopeContinentKey == null ? "all" : String(scopeContinentKey);
+    if (scope !== "all") {
+      var oneBatch = player.territories.filter(function (t) {
+        return t && deployTerritoryOwnedInContinent(gameState, t.name, scope);
+      });
+      return deployCollectProtectTargets(oneBatch);
+    }
+    var ordered = [];
+    deployListContinentKeysWithPlayerPresence(gameState, player).forEach(function (contKey) {
+      var batch = player.territories.filter(function (t) {
+        return t && deployTerritoryOwnedInContinent(gameState, t.name, contKey);
+      });
+      ordered = ordered.concat(deployCollectProtectTargets(batch));
+    });
+    return ordered;
+  }
+
+  function deployBuildProtectAllControlHtml(ids) {
+    ids = ids || {};
+    var btnId = ids.button || "deploy-protect-all";
+    var menuId = ids.menu || "deploy-protect-all-menu";
+    return (
+      '<div class="deploy-protect-all-wrap">' +
+      '<button type="button" id="' +
+      btnId +
+      '" class="deploy1-action-btn deploy1-action-btn-protect-all" aria-expanded="false" aria-haspopup="true" aria-controls="' +
+      menuId +
+      '" title="From bank: bring each owned territory below ' +
+      RISQUE_DEPLOY_PROTECT_TROOPS +
+      ' up to ' +
+      RISQUE_DEPLOY_PROTECT_TROOPS +
+      ' (all continents, alphabetical)">PROTECT ALL</button>' +
+      '<div id="' +
+      menuId +
+      '" class="deploy-protect-all-menu" role="menu" hidden></div>' +
+      "</div>"
+    );
+  }
+
+  function deployProtectAllMenuItemHtml(scopeKey, label, gameState, player) {
+    var targets = deployCollectProtectTargetsOrdered(gameState, player, scopeKey);
+    var inactive = targets.length === 0;
+    return (
+      '<button type="button" class="deploy-protect-all-menu-item' +
+      (inactive ? " deploy-protect-all-menu-item--inactive" : "") +
+      '" data-protect-scope="' +
+      scopeKey +
+      '" role="menuitem"' +
+      (inactive ? ' disabled aria-disabled="true"' : "") +
+      ">" +
+      label +
+      "</button>"
+    );
+  }
+
+  function deployRefreshProtectAllMenu(menuEl, gameState, player) {
+    if (!menuEl) return;
+    var html = deployProtectAllMenuItemHtml("all", "ALL", gameState, player);
+    if (gameState && player) {
+      deployListPlayerFullyOwnedContinentKeys(gameState, player).forEach(function (ck) {
+        html += deployProtectAllMenuItemHtml(
+          ck,
+          deployContinentDisplayName(ck).toUpperCase(),
+          gameState,
+          player
+        );
+      });
+    }
+    menuEl.innerHTML = html;
+  }
+
+  function deployProtectAllHasAnyTargets(gameState, player) {
+    return (
+      deployCollectProtectTargetsOrdered(gameState, player, "all").length > 0
+    );
+  }
+
+  function deployClearProtectAllMenuPosition(menu) {
+    if (!menu) return;
+    menu.style.position = "";
+    menu.style.top = "";
+    menu.style.left = "";
+    menu.style.width = "";
+    menu.style.zIndex = "";
+    menu.classList.remove("deploy-protect-all-menu--fixed");
+  }
+
+  function deployPositionProtectAllMenu(menu, btn) {
+    if (!menu || !btn) return;
+    var rect = btn.getBoundingClientRect();
+    menu.style.position = "fixed";
+    menu.style.top = Math.round(rect.bottom + 4) + "px";
+    menu.style.left = Math.round(rect.left) + "px";
+    menu.style.width = Math.max(Math.round(rect.width), 120) + "px";
+    menu.style.zIndex = "100003";
+    menu.classList.add("deploy-protect-all-menu--fixed");
+  }
+
+  function deployCloseProtectAllMenu(wrap) {
+    if (!wrap) return;
+    var menu =
+      wrap.querySelector(".deploy-protect-all-menu") ||
+      document.getElementById("deploy-protect-all-menu");
+    var btn = wrap.querySelector(".deploy1-action-btn-protect-all");
+    if (menu) {
+      menu.hidden = true;
+      deployClearProtectAllMenuPosition(menu);
+      if (menu.__risqueProtectAllHome && menu.parentNode !== menu.__risqueProtectAllHome) {
+        menu.__risqueProtectAllHome.appendChild(menu);
+      }
+    }
+    if (btn) btn.setAttribute("aria-expanded", "false");
+  }
+
+  function deployOpenProtectAllMenu(wrap, menu, btn) {
+    if (!menu || !btn) return;
+    if (!menu.__risqueProtectAllHome) {
+      menu.__risqueProtectAllHome = menu.parentNode;
+    }
+    document.body.appendChild(menu);
+    menu.hidden = false;
+    btn.setAttribute("aria-expanded", "true");
+    deployPositionProtectAllMenu(menu, btn);
+  }
+
+  function deployToggleProtectAllMenu(wrap) {
+    var menu =
+      (wrap && wrap.querySelector(".deploy-protect-all-menu")) ||
+      document.getElementById("deploy-protect-all-menu");
+    var btn = wrap && wrap.querySelector(".deploy1-action-btn-protect-all");
+    if (!menu || !btn) return;
+    if (menu.hidden) {
+      deployOpenProtectAllMenu(wrap, menu, btn);
+    } else {
+      deployCloseProtectAllMenu(wrap);
+    }
+  }
+
+  function deployWireProtectAllControl(cfg) {
+    cfg = cfg || {};
+    var wrap = document.querySelector(cfg.wrapSelector || ".deploy-protect-all-wrap");
+    var btn = document.getElementById(cfg.buttonId);
+    var menu = document.getElementById(cfg.menuId);
+    if (!wrap || !btn || !menu || typeof cfg.applyScope !== "function") {
+      return;
+    }
+    function refreshMenu() {
+      deployRefreshProtectAllMenu(menu, cfg.getGameState(), cfg.getPlayer());
+    }
+    refreshMenu();
+    if (wrap.__risqueProtectAllWired) {
+      wrap.__risqueProtectAllRefreshMenu = refreshMenu;
+      return;
+    }
+    wrap.__risqueProtectAllWired = true;
+    wrap.__risqueProtectAllRefreshMenu = refreshMenu;
+    btn.addEventListener("click", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (btn.disabled) return;
+      refreshMenu();
+      deployToggleProtectAllMenu(wrap);
+    });
+    menu.addEventListener("click", function (e) {
+      var item = e.target && e.target.closest("[data-protect-scope]");
+      if (!item || item.disabled || item.getAttribute("aria-disabled") === "true") {
+        return;
+      }
+      e.preventDefault();
+      e.stopPropagation();
+      var scopeKey = item.getAttribute("data-protect-scope") || "all";
+      deployCloseProtectAllMenu(wrap);
+      cfg.applyScope(scopeKey);
+    });
+    if (!wrap.__risqueProtectAllDocCloseWired) {
+      wrap.__risqueProtectAllDocCloseWired = true;
+      document.addEventListener("click", function (e) {
+        var menuEl = document.getElementById(cfg.menuId);
+        if (
+          wrap.contains(e.target) ||
+          (menuEl && menuEl.contains(e.target)) ||
+          (btn && btn === e.target)
+        ) {
+          return;
+        }
+        deployCloseProtectAllMenu(wrap);
+      });
+    }
+  }
+
+  function deployProtectAllFailedToComplete(result, hadTargets) {
+    if (!hadTargets || !result) return false;
+    return (Number(result.untouched) || 0) > 0 || (Number(result.partialCount) || 0) > 0;
+  }
+
+  function deployApplyProtectAllFromBank(targets, bank, applyAdd) {
+    var remaining = Math.max(0, Math.floor(Number(bank) || 0));
+    var totalDeployed = 0;
+    var fullyProtected = 0;
+    var partialCount = 0;
+    var untouched = 0;
+    for (var i = 0; i < targets.length; i++) {
+      if (remaining <= 0) {
+        untouched = targets.length - i;
+        break;
+      }
+      var entry = targets[i];
+      var add = Math.min(entry.needed, remaining);
+      if (add > 0) {
+        applyAdd(entry.territory, add);
+        remaining -= add;
+        totalDeployed += add;
+        if (add >= entry.needed) {
+          fullyProtected += 1;
+        } else {
+          partialCount += 1;
+        }
+      }
+    }
+    return {
+      totalDeployed: totalDeployed,
+      fullyProtected: fullyProtected,
+      partialCount: partialCount,
+      untouched: untouched
+    };
+  }
+
+  function deployProtectAllVoiceMessage(result, hadTargets) {
+    if (!hadTargets) {
+      return (
+        "Every owned territory already has at least " +
+        RISQUE_DEPLOY_PROTECT_TROOPS +
+        " troops."
+      );
+    }
+    if (result.totalDeployed <= 0) {
+      return "No troops left in bank.";
+    }
+    var msg =
+      "Protect all: deployed " +
+      result.totalDeployed +
+      " troop" +
+      (result.totalDeployed === 1 ? "" : "s") +
+      " (target " +
+      RISQUE_DEPLOY_PROTECT_TROOPS +
+      " per territory, lowest first).";
+    if (result.fullyProtected > 0) {
+      msg +=
+        " " +
+        result.fullyProtected +
+        " territor" +
+        (result.fullyProtected === 1 ? "y" : "ies") +
+        " now at " +
+        RISQUE_DEPLOY_PROTECT_TROOPS +
+        ".";
+    }
+    if (result.partialCount > 0 || result.untouched > 0) {
+      msg += " Bank exhausted before all territories reached " + RISQUE_DEPLOY_PROTECT_TROOPS + ".";
+    }
+    return msg;
+  }
+
+  function refreshDeployProtectAllButton(btn, player, gameState) {
+    var wrap = document.querySelector(".deploy-protect-all-wrap");
+    if (wrap && typeof wrap.__risqueProtectAllRefreshMenu === "function") {
+      wrap.__risqueProtectAllRefreshMenu();
+    }
+    if (!btn) {
+      return;
+    }
+    var gs = gameState || window.gameState;
+    var hasTargets = deployProtectAllHasAnyTargets(gs, player);
+    var bank = player ? Math.max(0, Number(player.bankValue) || 0) : 0;
+    var disabled = !player || bank <= 0 || !hasTargets;
+    btn.disabled = disabled;
+    if (disabled) {
+      deployCloseProtectAllMenu(wrap);
+    }
+    btn.title = !hasTargets
+      ? "All owned territories already have " + RISQUE_DEPLOY_PROTECT_TROOPS + "+ troops"
+      : bank <= 0
+        ? "No troops left in bank"
+        : "Open menu: ALL protects every owned territory below " +
+          RISQUE_DEPLOY_PROTECT_TROOPS +
+          " (continents A→Z); or pick one fully owned continent";
+  }
 
   function loginRecoveryHref() {
     return window.risqueLoginRecoveryViaPrivacyUrl();
@@ -696,7 +1066,6 @@
         applyBulkDeploySetup(0);
       });
     }
-
     var canvasWheel = document.getElementById("canvas");
     var svg = canvasWheel ? canvasWheel.querySelector(".svg-overlay") : null;
     if (svg) svg.addEventListener("wheel", onWheel, { passive: false });
@@ -916,6 +1285,11 @@
         var v = player ? Number(player.bankValue) : 0;
         bankNumber.textContent = (v || 0).toString().padStart(3, "0");
       }
+      refreshDeployProtectAllButton(
+        document.getElementById("deploy-protect-all"),
+        player,
+        gameState
+      );
       updateDeployVoice();
     }
 
@@ -1223,6 +1597,10 @@
           '<button type="button" id="deploy-add-5" class="deploy1-action-btn" aria-label="Add five troops from bank">+5</button>' +
           '<button type="button" id="deploy-add-10" class="deploy1-action-btn" aria-label="Add ten troops from bank">+10</button>' +
           '<button type="button" id="deploy-add-all" class="deploy1-action-btn" aria-label="Deploy all troops from bank to territory">ALL</button>' +
+          deployBuildProtectAllControlHtml({
+            button: "deploy-protect-all",
+            menu: "deploy-protect-all-menu"
+          }) +
           '<button type="button" id="confirm" class="deploy1-action-btn" aria-label="Confirm deployment">CONFIRM</button>' +
           "</div>" +
           "</div>"
@@ -1427,6 +1805,83 @@
         pushDeployMirror();
       }
 
+      function applyProtectAllTurn(scopeContinentKey) {
+        if (!gameState) {
+          return;
+        }
+        var player = gameState.players.find(function (p) {
+          return p.name === gameState.currentPlayer;
+        });
+        if (!player) {
+          return;
+        }
+        var targets = deployCollectProtectTargetsOrdered(gameState, player, scopeContinentKey);
+        var hadTargets = targets.length > 0;
+        if (!hadTargets) {
+          window.gameUtils.showError("");
+          updateDeployVoice(deployProtectAllVoiceMessage({ totalDeployed: 0 }, false));
+          return;
+        }
+        var bankBefore = Math.max(0, Number(player.bankValue) || 0);
+        if (bankBefore <= 0) {
+          window.gameUtils.showError("");
+          updateDeployVoice("No troops left in bank.");
+          return;
+        }
+        var result = deployApplyProtectAllFromBank(targets, bankBefore, function (territory, add) {
+          territory.troops += add;
+          player.bankValue -= add;
+          deployedTroops[territory.name] = (deployedTroops[territory.name] || 0) + add;
+        });
+        if (result.totalDeployed <= 0) {
+          window.gameUtils.showError("");
+          updateDeployVoice("No troops left in bank.");
+          return;
+        }
+        if (deployProtectAllFailedToComplete(result, hadTargets)) {
+          window.gameUtils.showError(DEPLOY_PROTECT_ALL_EXHAUSTED_MSG);
+        } else {
+          window.gameUtils.showError("");
+        }
+        player.troopsTotal =
+          player.territories.reduce(function (sum, t) {
+            return sum + (Number(t.troops) || 0);
+          }, 0) + Number(player.bankValue);
+        window.deployedTroops = deployedTroops;
+        var voiceMsg = deployProtectAllVoiceMessage(result, true);
+        if (deployProtectAllFailedToComplete(result, hadTargets)) {
+          voiceMsg = DEPLOY_PROTECT_ALL_EXHAUSTED_MSG;
+        }
+        console.log("[DeployTurn] PROTECT ALL: " + voiceMsg);
+        try {
+          gameState.risqueDeployTransientPrimary =
+            player.name +
+            " deployed troops to protect owned territories (target " +
+            RISQUE_DEPLOY_PROTECT_TROOPS +
+            " each).";
+        } catch (eTr2) {
+          /* ignore */
+        }
+        window.selectedTerritory = null;
+        keyboardBuffer = "";
+        if (!deployProtectAllFailedToComplete(result, hadTargets)) {
+          window.gameUtils.showError("");
+        }
+        try {
+          localStorage.setItem("gameState", JSON.stringify(gameState));
+        } catch (ePa) {
+          /* ignore */
+        }
+        pushDeployMirror();
+        requestAnimationFrame(function () {
+          rerender(null);
+          if (typeof window.risqueSetSpectatorFocus === "function") {
+            window.risqueSetSpectatorFocus([]);
+          }
+          updateDeployVoice(voiceMsg);
+        });
+      }
+
       /** Add N troops from bank to selected territory (host HUD +2 / +5 / +10). */
       function applyDeployFromBank(troopChange) {
         troopChange = Math.floor(Number(troopChange) || 0);
@@ -1534,6 +1989,22 @@
           applyBulkDeployTurn(0);
         });
       }
+      deployWireProtectAllControl({
+        wrapSelector: ".deploy-protect-all-wrap",
+        buttonId: "deploy-protect-all",
+        menuId: "deploy-protect-all-menu",
+        getGameState: function () {
+          return gameState;
+        },
+        getPlayer: function () {
+          return gameState.players.find(function (p) {
+            return p.name === gameState.currentPlayer;
+          });
+        },
+        applyScope: function (scopeKey) {
+          applyProtectAllTurn(scopeKey);
+        }
+      });
 
       window.risqueGetAuxMouseMenu = function () {
         var phDep = String(gameState.phase || "");
@@ -1567,6 +2038,12 @@
               label: "Put all but 3 in bank on territory",
               action: function () {
                 applyBulkDeployTurn(3);
+              }
+            },
+            {
+              label: "Protect all territories (to 3)",
+              action: function () {
+                applyProtectAllTurn("all");
               }
             },
             {

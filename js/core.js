@@ -1273,11 +1273,19 @@ window.gameUtils = {
           !isPublicView
         ) {
           const rp = gameState.risqueReinforcePreview;
-          const amt = Number(rp.amount);
-          if (Number.isFinite(amt) && amt >= 1 && rp.source === label) {
-            troops = Number(troops) - amt;
-          } else if (Number.isFinite(amt) && amt >= 1 && rp.destination === label) {
-            troops = Number(troops) + amt;
+          if (rp.mode === 'balanced') {
+            if (rp.source === label && typeof rp.sourceTroops === 'number') {
+              troops = rp.sourceTroops;
+            } else if (rp.destination === label && typeof rp.destinationTroops === 'number') {
+              troops = rp.destinationTroops;
+            }
+          } else {
+            const amt = Number(rp.amount);
+            if (Number.isFinite(amt) && amt >= 1 && rp.source === label) {
+              troops = Number(troops) - amt;
+            } else if (Number.isFinite(amt) && amt >= 1 && rp.destination === label) {
+              troops = Number(troops) + amt;
+            }
           }
         }
         const transferPulse = gameState && gameState.risqueTransferPulse;
