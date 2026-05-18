@@ -2027,7 +2027,15 @@ function autoCompleteTroopTransferLeaveBehind(leaveBehind, opts) {
   }
   if (typeof window.risqueReplayRecordBattle === 'function') {
     try {
-      window.risqueReplayRecordBattle(window.gameState);
+      window.risqueReplayRecordBattle(window.gameState, {
+        territoryCaptured: true,
+        attackerName: player.name,
+        defenderName:
+          window.gameState.risqueCheapReplayLastDefender != null
+            ? String(window.gameState.risqueCheapReplayLastDefender)
+            : '',
+        territoryName: acquired.name
+      });
     } catch (eRep) {
       /* ignore */
     }
@@ -2240,6 +2248,11 @@ function applyBattleRoundAfterRoll(snap, opts) {
       }
     });
     window.gameState.conqueredThisTurn = true;
+    try {
+      window.gameState.risqueCheapReplayLastDefender = String(opponent.name || '');
+    } catch (eDefCap) {
+      /* ignore */
+    }
     window.gameState.attackingTerritory = { name: attackerTerritory.name, troops: attackerTerritory.troops };
     window.gameState.acquiredTerritory = { name: defenderTerritory.name, troops: minTroopsToTransfer };
     window.gameState.minTroopsToTransfer = minTroopsToTransfer;
@@ -2254,11 +2267,10 @@ function applyBattleRoundAfterRoll(snap, opts) {
       window.gameState.risqueInstantBlitzTransferUi = true;
     }
 
-    /* Record capture on tape before auto-transfer / pending_transfer. Campaign used to skip this and rely
-       only on post-transfer frames; that could drop the decisive-roll board from replay (last hop looked idle). */
+    /* Tier 5 still: capture after troop transfer (not mid pending_transfer). Granular tape records here. */
     if (typeof window.risqueReplayRecordBattle === 'function') {
       try {
-        window.risqueReplayRecordBattle(window.gameState);
+        window.risqueReplayRecordBattle(window.gameState, { skipIfPendingTransfer: true });
       } catch (eRep) {
         /* ignore */
       }
@@ -2342,7 +2354,12 @@ function applyBattleRoundAfterRoll(snap, opts) {
 
   if (typeof window.risqueReplayRecordBattle === 'function') {
     try {
-      window.risqueReplayRecordBattle(window.gameState);
+      window.risqueReplayRecordBattle(window.gameState, {
+        territoryCaptured: false,
+        attackerName: player.name,
+        defenderName: opponent.name,
+        territoryName: defenderTerritory.name
+      });
     } catch (eRep) {
       /* ignore */
     }
@@ -2541,7 +2558,18 @@ function completeTroopTransferFromPending(additional) {
   saveGameState();
   if (typeof window.risqueReplayRecordBattle === 'function') {
     try {
-      window.risqueReplayRecordBattle(window.gameState);
+      var defNm =
+        deferredElimSnapshot && deferredElimSnapshot.defenderName
+          ? String(deferredElimSnapshot.defenderName)
+          : window.gameState.risqueCheapReplayLastDefender != null
+            ? String(window.gameState.risqueCheapReplayLastDefender)
+            : '';
+      window.risqueReplayRecordBattle(window.gameState, {
+        territoryCaptured: true,
+        attackerName: player.name,
+        defenderName: defNm,
+        territoryName: acquired.name
+      });
     } catch (eRep) {
       /* ignore */
     }

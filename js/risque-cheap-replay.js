@@ -1,7 +1,7 @@
 /**
- * Battle stills tier (`battle_stills`, legacy `host_ultra`): phase-end board snapshots (deal, opening deploy,
- * each player's turn deploy, end of attack phase, end of reinforce). RAM only during play; flushed to the
- * session REPLAY folder as rqwb-still-*.json + rqwb-stills-manifest.json. Not written into localStorage.
+ * Battle stills tier (`battle_stills`, legacy `host_ultra`): lean map slideshow — post-deal, then one still
+ * per battle outcome (after capture transfer or after a non-conquest fight). RAM only during play; flushed
+ * to REPLAY/rqwb-still-*.json + rqwb-stills-manifest.json. Not written into localStorage.
  */
 (function () {
   "use strict";
@@ -86,11 +86,52 @@
     var r = Math.max(1, Number(gs && gs.round) || 1);
     var who = gs && gs.currentPlayer != null ? String(gs.currentPlayer).trim() : "";
     if (kind === "deal") return "Round " + r + " — Deal complete";
+    if (kind === "battle_outcome") return "Round " + r + " — Battle";
     if (kind === "post_setup_deploy") return "Round " + r + " — Opening deployment complete (all players)";
     if (kind === "turn_deploy") return "Round " + r + " — " + (who || "?") + " — Turn deployment complete";
     if (kind === "attack_phase") return "Round " + r + " — " + (who || "?") + " — Attack phase complete";
     if (kind === "reinforce") return "Round " + r + " — " + (who || "?") + " — Reinforcement complete";
     return "Round " + r + " — " + (who || "?");
+  }
+
+  function prettyTerritoryLabel(id) {
+    var s = id != null ? String(id).trim() : "";
+    if (!s) return "territory";
+    return s.replace(/_/g, " ");
+  }
+
+  function buildBattleOutcomeCaption(meta, gs) {
+    if (meta && meta.caption != null && String(meta.caption).trim() !== "") {
+      return String(meta.caption).trim();
+    }
+    var atk = meta && meta.attackerName != null ? String(meta.attackerName).trim() : "";
+    var def = meta && meta.defenderName != null ? String(meta.defenderName).trim() : "";
+    if (!atk && gs && gs.currentPlayer != null) atk = String(gs.currentPlayer).trim();
+    if (!def && gs && gs.risqueCheapReplayLastDefender != null) {
+      def = String(gs.risqueCheapReplayLastDefender).trim();
+    }
+    var terr = meta && meta.territoryName != null ? String(meta.territoryName).trim() : "";
+    if (meta && (meta.playerConquest || meta.eliminated)) {
+      if (atk && def) return atk + " conquers " + def;
+      return defaultCaption("battle_outcome", gs);
+    }
+    if (meta && meta.territoryCaptured) {
+      if (atk && def) return atk + " conquers " + def;
+      if (atk && terr) return atk + " takes " + prettyTerritoryLabel(terr);
+      return defaultCaption("battle_outcome", gs);
+    }
+    if (atk && def && terr) {
+      return atk + " attacks " + def + " — " + prettyTerritoryLabel(terr) + " holds";
+    }
+    if (atk && def) return atk + " attacks " + def;
+    return defaultCaption("battle_outcome", gs);
+  }
+
+  function lastStillBoardStable(gs) {
+    var rows = gs && Array.isArray(gs.risqueCheapReplayStills) ? gs.risqueCheapReplayStills : [];
+    if (!rows.length) return "";
+    var last = rows[rows.length - 1];
+    return last && last.board ? boardJsonStableForBudget(last.board) : "";
   }
 
   function ensureTapeKey(gs) {
@@ -127,17 +168,30 @@
     return gs.risqueCheapReplayFrameSeq;
   }
 
-  function pushPhaseStill(gs, internalKind, captionOpt) {
+  function pushPhaseStill(gs, internalKind, captionOpt, metaOpt) {
     if (!tierBattleStills(gs)) return;
     ensureTapeKey(gs);
     ensureStillsArray(gs);
-    var seq = bumpFrameSeq(gs);
-    var round = Math.max(1, Number(gs.round) || 1);
     var board = snapshotBoard(gs);
     if (!board || !Object.keys(board).length) return;
+    var stable = boardJsonStableForBudget(board);
+    if (metaOpt && metaOpt.allowDuplicateBoard !== true && stable && stable === lastStillBoardStable(gs)) {
+      return;
+    }
+    var seq = bumpFrameSeq(gs);
+    var round = Math.max(1, Number(gs.round) || 1);
     var colorsSnap = snapshotPlayerColorsAtCapture(gs, board);
     var cap = captionOpt != null && String(captionOpt).trim() !== "" ? String(captionOpt).trim() : defaultCaption(internalKind, gs);
     var slug = String(internalKind || "frame").replace(/[^a-z0-9_\-]/gi, "_");
+    var battleSeq = 0;
+    if (internalKind === "battle_outcome") {
+      if (typeof gs.risqueCheapReplayBattleSeq !== "number" || !isFinite(gs.risqueCheapReplayBattleSeq)) {
+        gs.risqueCheapReplayBattleSeq = 0;
+      }
+      gs.risqueCheapReplayBattleSeq += 1;
+      battleSeq = gs.risqueCheapReplayBattleSeq;
+      slug = "battle" + battleSeq;
+    }
     var fileLeaf = FILE_PREFIX + "r" + round + "-f" + seq + "-" + slug + ".json";
     gs.risqueCheapReplayStills.push({
       fileName: fileLeaf,
@@ -167,26 +221,36 @@
   };
 
   window.risqueCheapReplayCapturePostSetupDeploy = function (gs) {
-    if (!tierBattleStills(gs)) return;
-    pushPhaseStill(gs, "post_setup_deploy", null);
+    /* Lean tier 5: replay starts post-deal only. */
+    return;
   };
 
   /** After income deploy: current player placed all reinforcements from bank → attack. */
   window.risqueCheapReplayCaptureTurnDeployDone = function (gs) {
-    if (!tierBattleStills(gs)) return;
-    pushPhaseStill(gs, "turn_deploy", null);
+    return;
   };
 
   /** When the active player leaves the attack phase (→ reinforce). */
   window.risqueCheapReplayCaptureAttackPhaseDone = function (gs) {
-    if (!tierBattleStills(gs)) return;
-    pushPhaseStill(gs, "attack_phase", null);
+    return;
   };
 
   /** After reinforcement step → receive-card. */
   window.risqueCheapReplayCaptureReinforceDone = function (gs) {
+    return;
+  };
+
+  /**
+   * Post-battle map still (tier 5). Call after troop transfer on captures, or after a non-conquest roll.
+   * @param {object} gs gameState
+   * @param {object|null} meta { attackerName, defenderName, territoryName, territoryCaptured, playerConquest, eliminated, caption, skipIfPendingTransfer }
+   */
+  window.risqueCheapReplayCaptureBattleOutcome = function (gs, meta) {
     if (!tierBattleStills(gs)) return;
-    pushPhaseStill(gs, "reinforce", null);
+    meta = meta && typeof meta === "object" ? meta : {};
+    if (meta.skipIfPendingTransfer && gs.attackPhase === "pending_transfer") return;
+    var cap = buildBattleOutcomeCaption(meta, gs);
+    pushPhaseStill(gs, "battle_outcome", cap, meta);
   };
 
   window.risqueCheapReplayFlushToDisk = function (gs) {
@@ -330,8 +394,8 @@
   function stillKindToReplaySegment(kind) {
     var k = String(kind || "").trim();
     if (k === "deal") return "deal";
+    if (k === "battle_outcome" || k === "attack_phase") return "battle";
     if (k === "post_setup_deploy" || k === "turn_deploy") return "deploy";
-    if (k === "attack_phase") return "battle";
     if (k === "reinforce") return "reinforce";
     return "battle";
   }

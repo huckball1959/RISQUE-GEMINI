@@ -914,7 +914,21 @@
 
   window.risqueReplayTryWriteDdJsonAfterSetupDeploy = tryFlushGranularDealDeployReplay;
 
-  window.risqueReplayRecordBattle = function (gs) {
+  window.risqueReplayRecordBattle = function (gs, meta) {
+    if (gs && typeof gs === "object") {
+      var tierB =
+        gs.risqueAutosaveTier != null ? String(gs.risqueAutosaveTier).trim() : "";
+      if (tierB === "battle_stills" || tierB === "host_ultra") {
+        if (typeof window.risqueCheapReplayCaptureBattleOutcome === "function") {
+          try {
+            window.risqueCheapReplayCaptureBattleOutcome(gs, meta || null);
+          } catch (eBs) {
+            /* ignore */
+          }
+        }
+        return;
+      }
+    }
     if (!shouldRecord(gs)) return;
     ensureOpeningFrom(gs);
     var board = snapshotBoard(gs);
@@ -930,6 +944,26 @@
   };
 
   window.risqueReplayRecordElimination = function (gs, conqueror, defeated) {
+    if (gs && typeof gs === "object") {
+      var tierE =
+        gs.risqueAutosaveTier != null ? String(gs.risqueAutosaveTier).trim() : "";
+      if (tierE === "battle_stills" || tierE === "host_ultra") {
+        if (typeof window.risqueCheapReplayCaptureBattleOutcome === "function") {
+          try {
+            window.risqueCheapReplayCaptureBattleOutcome(gs, {
+              attackerName: conqueror,
+              defenderName: defeated,
+              playerConquest: true,
+              eliminated: true,
+              allowDuplicateBoard: true
+            });
+          } catch (eBsE) {
+            /* ignore */
+          }
+        }
+        return;
+      }
+    }
     if (!shouldRecord(gs)) return;
     ensureTape(gs);
     ensureReplayTapeSessionKey(gs);

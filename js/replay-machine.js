@@ -2218,8 +2218,8 @@
   function mapRqwbPhaseKindToTapeSegment(kind) {
     var k = kind != null ? String(kind).trim().toLowerCase() : "";
     if (k === "deal") return "deal";
+    if (k === "battle_outcome" || k === "attack_phase") return "battle";
     if (k === "post_setup_deploy" || k === "post_deploy" || k === "turn_deploy") return "deploy";
-    if (k === "attack_phase") return "battle";
     if (k === "reinforce") return "reinforce";
     return "deploy";
   }

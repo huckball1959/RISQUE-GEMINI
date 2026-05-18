@@ -1020,6 +1020,27 @@
       }
     } catch (eEns) {}
     try {
+      var tierBoot =
+        live.risqueAutosaveTier != null ? String(live.risqueAutosaveTier).trim() : "";
+      if (
+        (tierBoot === "battle_stills" || tierBoot === "host_ultra") &&
+        typeof window.risqueBuildBudgetReplayPackFromCheapStills === "function"
+      ) {
+        var budgetBoot = window.risqueBuildBudgetReplayPackFromCheapStills(live);
+        if (
+          budgetBoot &&
+          budgetBoot.format === "risque-replay-v1" &&
+          budgetBoot.tape &&
+          Array.isArray(budgetBoot.tape.events) &&
+          budgetBoot.tape.events.length >= 2
+        ) {
+          return JSON.stringify(budgetBoot);
+        }
+      }
+    } catch (eBudgetBoot) {
+      /* fall through */
+    }
+    try {
       if (typeof window.risqueBuildSessionReplayExport !== "function") return null;
       var sp = window.risqueBuildSessionReplayExport(live);
       if (!sp || sp.format !== "risque-replay-v1" || !sp.tape || !Array.isArray(sp.tape.events) || !sp.tape.events.length) {
@@ -8480,11 +8501,10 @@
       '<input type="radio" name="risque-autosave-tier" value="battle_stills"' +
       chk("battle_stills") +
       ">" +
-      '<span class="risque-ac-opt-text"><span class="risque-ac-opt-title">5 · Battle stills (no autosave)</span>' +
+      '<span class="risque-ac-opt-text"><span class="risque-ac-opt-title">5 · Battle stills (lean replay)</span>' +
       "<span class=\"risque-ac-opt-desc\">" +
-        "<strong>No</strong> per-round game JSON or replay tape on disk during play. The host keeps compact board snapshots in memory at <strong>phase boundaries</strong> (deal, opening deploy, each turn deploy, end of attack phase, end of reinforce). " +
-        "<strong>SAVE + REPLAY</strong> (or SAVE with replay sidecar) writes the usual game JSON plus a <strong>budget</strong> <code>*-replay.json</code> (deal through now, one frame per phase, plus a mid-phase tail if the board moved since the last still). " +
-        "At <strong>game end</strong>, with a connected save folder, frames also flush to the session <strong>REPLAY</strong> folder as <code>rqwb-still-*.json</code> + manifest; Wayback plays those at <strong>1 second per frame</strong> with round + phase captions.</span></span>" +
+        "<strong>No</strong> per-round game JSON or granular replay tape during play. Replay is a <strong>map slideshow</strong>: one frame after deal, then one frame per <strong>battle outcome</strong> (colors + troop counts, captions like “Nooch conquers Mickey”). " +
+        "<strong>SAVE + REPLAY</strong> writes game JSON plus budget <code>*-replay.json</code>. At <strong>game end</strong>, stills flush to <strong>REPLAY</strong> (<code>rqwb-still-*.json</code> + manifest). Public Wayback advances ~1 second per frame — no dice animation.</span></span>" +
       "</label></li>" +
       "</ul>" +
       '<div class="risque-ras-actions">' +
