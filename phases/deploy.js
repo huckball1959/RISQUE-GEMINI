@@ -16,6 +16,21 @@
 
   var STYLE_ID_DEPLOY_TURN = "risque-deploy2-styles-v1";
 
+  /** Setup/turn deploy: do not stringify the full replay tape into localStorage on every wheel click. */
+  function persistGameStateLite(gs) {
+    var target = gs && typeof gs === "object" ? gs : window.gameState;
+    if (!target) return;
+    if (typeof window.risqueWriteGameStateLocalStorageLite === "function") {
+      window.risqueWriteGameStateLocalStorageLite(target);
+      return;
+    }
+    try {
+      localStorage.setItem("gameState", JSON.stringify(target));
+    } catch (err) {
+      console.warn("[Deploy] Failed to save game state.");
+    }
+  }
+
   function deployContinentDisplayName(contKey) {
     var gu = window.gameUtils;
     if (gu && gu.continentDisplayNames && gu.continentDisplayNames[contKey]) {
@@ -564,7 +579,7 @@
     function persistGameStateForPublicMirror() {
       try {
         if (window.gameState && !window.risqueDisplayIsPublic) {
-          localStorage.setItem("gameState", JSON.stringify(window.gameState));
+          persistGameStateLite(window.gameState);
         }
       } catch (e0) {
         /* ignore */
@@ -649,7 +664,7 @@
         window.risqueSetSpectatorFocus([window.selectedTerritory]);
       }
       try {
-        localStorage.setItem("gameState", JSON.stringify(gameState));
+        persistGameStateLite(gameState);
       } catch (err) {
         console.warn("[Deploy] Failed to save game state.");
       }
@@ -691,7 +706,7 @@
         window.risqueSetSpectatorFocus([window.selectedTerritory]);
       }
       try {
-        localStorage.setItem("gameState", JSON.stringify(gameState));
+        persistGameStateLite(gameState);
       } catch (err) {
         console.warn("[Deploy] Failed to save game state.");
       }
@@ -737,7 +752,7 @@
         window.risqueSetSpectatorFocus([window.selectedTerritory]);
       }
       try {
-        localStorage.setItem("gameState", JSON.stringify(gameState));
+        persistGameStateLite(gameState);
       } catch (err) {
         console.warn("[Deploy] Failed to save game state.");
       }
@@ -850,7 +865,7 @@
         renderMap(null);
         updateBankDisplay();
         try {
-          localStorage.setItem("gameState", JSON.stringify(gameState));
+          persistGameStateLite(gameState);
         } catch (err2) {
           console.warn("[Deploy] Failed to save game state.");
         }
@@ -949,7 +964,7 @@
       renderMap(null);
       updateBankDisplay();
       try {
-        localStorage.setItem("gameState", JSON.stringify(gameState));
+        persistGameStateLite(gameState);
       } catch (e) {
         console.warn("[Deploy] Failed to save game state.");
       }
@@ -986,11 +1001,19 @@
             }
           }
           if (typeof window.risqueReplayTryWriteDdJsonAfterSetupDeploy === "function") {
-            window.risqueReplayTryWriteDdJsonAfterSetupDeploy(gameState);
+            window.risqueReplayTryWriteDdJsonAfterSetupDeploy(gameState, { sealAfterWrite: true });
           }
-          localStorage.setItem("gameState", JSON.stringify(gameState));
+          if (typeof window.risqueReplayPersistTapeSidecarImmediate === "function") {
+            try {
+              window.risqueReplayPersistTapeSidecarImmediate(gameState);
+            } catch (eSideDep) {
+              /* ignore */
+            }
+          }
           if (typeof window.risquePersistHostGameState === "function") {
-            window.risquePersistHostGameState();
+            window.risquePersistHostGameState(gameState);
+          } else {
+            persistGameStateLite(gameState);
           }
           if (uiOverlay) uiOverlay.classList.remove("fade-out");
           setTimeout(function () {
@@ -1016,7 +1039,7 @@
       }
       window.gameUtils.showError("");
       try {
-        localStorage.setItem("gameState", JSON.stringify(gameState));
+        persistGameStateLite(gameState);
       } catch (e2) {
         console.warn("[Deploy] Failed to save game state.");
       }
@@ -1136,7 +1159,7 @@
       if (gameState.phase === "con-income") {
         gameState.phase = "con-deploy";
         try {
-          localStorage.setItem("gameState", JSON.stringify(gameState));
+          persistGameStateLite(gameState);
         } catch (ePh) {
           /* ignore */
         }
@@ -1204,7 +1227,7 @@
       }
       if (clearedConquestIncome) {
         try {
-          localStorage.setItem("gameState", JSON.stringify(gameState));
+          persistGameStateLite(gameState);
         } catch (eSavClr) {
           /* ignore */
         }
@@ -1225,7 +1248,7 @@
     function persistGameStateForPublicMirror() {
       try {
         if (window.gameState && !window.risqueDisplayIsPublic) {
-          localStorage.setItem("gameState", JSON.stringify(window.gameState));
+          persistGameStateLite(window.gameState);
         }
       } catch (e0) {
         /* ignore */
@@ -1359,7 +1382,7 @@
 
       gameState.phase = continentalDeploy ? "con-deploy" : "deploy";
       try {
-        localStorage.setItem("gameState", JSON.stringify(gameState));
+        persistGameStateLite(gameState);
       } catch (e2) {
         /* ignore */
       }
@@ -1464,7 +1487,7 @@
           });
 
           try {
-            localStorage.setItem("gameState", JSON.stringify(gameState));
+            persistGameStateLite(gameState);
           } catch (e2) {
             /* ignore */
           }
@@ -1559,7 +1582,7 @@
           });
 
           try {
-            localStorage.setItem("gameState", JSON.stringify(gameState));
+            persistGameStateLite(gameState);
           } catch (e2) {
             /* ignore */
           }
@@ -1667,7 +1690,7 @@
             gs0.phase = "con-transfertroops";
             gs0.risqueConquestTransferProceedTo = "attack";
             try {
-              localStorage.setItem("gameState", JSON.stringify(gs0));
+              persistGameStateLite(gs0);
             } catch (e0) {
               /* ignore */
             }
@@ -1675,7 +1698,7 @@
             return;
           }
           try {
-            if (gs0) localStorage.setItem("gameState", JSON.stringify(gs0));
+            if (gs0) persistGameStateLite(gs0);
           } catch (e0b) {
             /* ignore */
           }
@@ -1730,7 +1753,7 @@
         });
 
         try {
-          localStorage.setItem("gameState", JSON.stringify(gameState));
+          persistGameStateLite(gameState);
         } catch (e2) {
           /* ignore */
         }
@@ -1784,7 +1807,7 @@
           }
         });
         try {
-          localStorage.setItem("gameState", JSON.stringify(gameState));
+          persistGameStateLite(gameState);
         } catch (e2) {
           /* ignore */
         }
@@ -1868,7 +1891,7 @@
           window.gameUtils.showError("");
         }
         try {
-          localStorage.setItem("gameState", JSON.stringify(gameState));
+          persistGameStateLite(gameState);
         } catch (ePa) {
           /* ignore */
         }
@@ -1944,7 +1967,7 @@
           }
         });
         try {
-          localStorage.setItem("gameState", JSON.stringify(gameState));
+          persistGameStateLite(gameState);
         } catch (e2) {
           /* ignore */
         }
@@ -2093,7 +2116,7 @@
             if (typeof window.risqueReplayRecordDeploy === "function") {
               window.risqueReplayRecordDeploy(gameState);
             }
-            localStorage.setItem("gameState", JSON.stringify(gameState));
+            persistGameStateLite(gameState);
             pushDeployMirror();
             if (typeof window.risqueHostReplaceShellGameState === "function") {
               window.risqueHostReplaceShellGameState(gameState);
@@ -2129,7 +2152,7 @@
               /* ignore */
             }
           }
-          localStorage.setItem("gameState", JSON.stringify(gameState));
+          persistGameStateLite(gameState);
           pushDeployMirror();
           if (typeof window.risqueHostReplaceShellGameState === "function") {
             window.risqueHostReplaceShellGameState(gameState);

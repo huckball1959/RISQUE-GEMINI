@@ -798,16 +798,38 @@ function formatBattleOutcomeFriendly(attackerOwner, defenderOwner, attackerLosse
 }
 
 function saveGameState() {
+  var gs = window.gameState;
+  if (!gs) return;
+  if (typeof window.risqueWriteGameStateLocalStorageLite === "function") {
+    try {
+      window.risqueWriteGameStateLocalStorageLite(gs);
+    } catch (eLite) {
+      /* fallback below */
+    }
+    if (typeof window.risqueReplayScheduleTapeSidecarPersist === "function") {
+      try {
+        window.risqueReplayScheduleTapeSidecarPersist(gs);
+      } catch (eSide) {
+        /* ignore */
+      }
+    }
+    if (typeof window.risqueScheduleMirrorPush === "function") {
+      window.risqueScheduleMirrorPush();
+    } else if (typeof window.risqueMirrorPushGameState === "function") {
+      window.risqueMirrorPushGameState();
+    }
+    return;
+  }
   if (typeof window.risquePersistHostGameState === "function") {
     try {
-      window.risquePersistHostGameState(window.gameState);
+      window.risquePersistHostGameState(gs);
       return;
     } catch (eFastPersist) {
       /* fallback below */
     }
   }
   function writeState() {
-    localStorage.setItem("gameState", JSON.stringify(window.gameState));
+    localStorage.setItem("gameState", JSON.stringify(gs));
   }
   try {
     writeState();

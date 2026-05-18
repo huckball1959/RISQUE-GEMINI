@@ -157,13 +157,21 @@
       gameState.currentPlayer = gameState.turnOrder[0];
       gameState.phase = "deal";
       gameState.selectionPhase = "deployOrder";
-      try {
-        localStorage.setItem("gameState", JSON.stringify(gameState));
-      } catch (e2) {
-        logLines("Save error: " + e2.message, logFn);
+      if (typeof window.risqueReplayPersistTapeSidecarImmediate === "function") {
+        try {
+          window.risqueReplayPersistTapeSidecarImmediate(gameState);
+        } catch (eSideDeal) {
+          /* ignore */
+        }
       }
-      if (typeof window.risqueMirrorPushGameState === "function") {
-        window.risqueMirrorPushGameState();
+      if (typeof window.risquePersistHostGameState === "function") {
+        try {
+          window.risquePersistHostGameState(gameState);
+        } catch (ePvDeal) {
+          logLines("Save error: " + (ePvDeal && ePvDeal.message ? ePvDeal.message : "persist"), logFn);
+        }
+      } else if (typeof window.risqueWriteGameStateLocalStorageLite === "function") {
+        window.risqueWriteGameStateLocalStorageLite(gameState);
       }
       if (typeof window.risqueCheapReplayCapturePostDeal === "function") {
         try {
@@ -197,10 +205,12 @@
       territories.splice(territoryIndex, 1);
       currentPlayerIndex = (currentPlayerIndex + 1) % players.length;
 
-      try {
-        localStorage.setItem("gameState", JSON.stringify(gameState));
-      } catch (e3) {
-        logLines("Save error: " + e3.message, logFn);
+      if (typeof window.risqueReplayRecordDeal === "function") {
+        try {
+          window.risqueReplayRecordDeal(gameState);
+        } catch (eRep) {
+          /* ignore */
+        }
       }
 
       window.gameUtils.renderTerritories(territory, gameState, {}, { popIn: true });
@@ -208,7 +218,9 @@
       window.gameUtils.resizeCanvas();
       /* TV mirror: one-shot territory id so public board can use the same popIn grow as host (see game-shell). */
       gameState.risquePublicDealPopTerritory = territory;
-      if (typeof window.risqueMirrorPushGameState === "function") {
+      if (typeof window.risqueScheduleMirrorPush === "function") {
+        window.risqueScheduleMirrorPush();
+      } else if (typeof window.risqueMirrorPushGameState === "function") {
         window.risqueMirrorPushGameState();
       }
       if (window.risqueRuntimeHud && typeof window.risqueRuntimeHud.setControlVoiceText === "function") {
@@ -221,13 +233,6 @@
         delete gameState.risquePublicDealPopTerritory;
       } catch (ePop) {
         /* ignore */
-      }
-      if (typeof window.risqueReplayRecordDeal === "function") {
-        try {
-          window.risqueReplayRecordDeal(gameState);
-        } catch (eRep) {
-          /* ignore */
-        }
       }
       setTimeout(assignTerritory, 500);
     }

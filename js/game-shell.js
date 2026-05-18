@@ -2095,6 +2095,40 @@
     });
   }
 
+  /**
+   * Frequent phase updates (deal steps, deploy wheel): persist stripped gameState only — no replay
+   * sidecar, no TV mirror. Keeps localStorage under quota while the tape grows in RAM.
+   */
+  window.risqueWriteGameStateLocalStorageLite = function (stateOpt) {
+    if (window.risqueDisplayIsPublic) return false;
+    var gs = stateOpt && typeof stateOpt === "object" ? stateOpt : window.gameState;
+    if (!gs) return false;
+    var payload = gs;
+    try {
+      if (
+        risqueLocalStorageReplayLiteEnabled() &&
+        typeof window.risqueStripReplayFromGameStateClone === "function"
+      ) {
+        payload = window.risqueStripReplayFromGameStateClone(gs);
+      }
+      var diskJson =
+        typeof window.risqueJsonStringifyGameStateForStorage === "function"
+          ? window.risqueJsonStringifyGameStateForStorage(payload)
+          : JSON.stringify(payload);
+      if (!risqueTryWriteLocalStorageWithQuotaFallback(STORAGE_KEY, diskJson)) {
+        var emergency = risqueBuildEmergencyStorageState(payload);
+        var emergencyJson =
+          typeof window.risqueJsonStringifyGameStateForStorage === "function"
+            ? window.risqueJsonStringifyGameStateForStorage(emergency)
+            : JSON.stringify(emergency);
+        return risqueTryWriteLocalStorageWithQuotaFallback(STORAGE_KEY, emergencyJson);
+      }
+      return true;
+    } catch (eLite) {
+      return false;
+    }
+  };
+
   /** Host phases should call this after mutating state (save + TV mirror). */
   window.risquePersistHostGameState = function (stateOpt) {
     var gs = stateOpt && typeof stateOpt === "object" ? stateOpt : window.gameState;
@@ -7685,21 +7719,17 @@
 
   function saveState(state) {
     function write() {
+      /* Debounce replay sidecar — sync stringify of a long tape blocked the UI (round 3+ campaign). */
       try {
-        if (typeof window.risqueReplayFlushTapeSidecarSchedule === "function") {
-          window.risqueReplayFlushTapeSidecarSchedule();
-        }
-      } catch (eFlSc) {
-        /* ignore */
-      }
-      var payload = state;
-      try {
-        if (typeof window.risqueReplayPersistTapeSidecar === "function") {
+        if (typeof window.risqueReplayScheduleTapeSidecarPersist === "function") {
+          window.risqueReplayScheduleTapeSidecarPersist(state);
+        } else if (typeof window.risqueReplayPersistTapeSidecar === "function") {
           window.risqueReplayPersistTapeSidecar(state);
         }
       } catch (eReplaySidecar) {
         /* ignore */
       }
+      var payload = state;
       if (
         risqueLocalStorageReplayLiteEnabled() &&
         typeof window.risqueStripReplayFromGameStateClone === "function"

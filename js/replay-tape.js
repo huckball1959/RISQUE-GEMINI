@@ -146,15 +146,49 @@
   /** Coalesce frequent disk sidecar writes during rapid combat (every battle called stringify of the full tape). */
   var __replaySidecarTimer = null;
   var __replaySidecarGsRef = null;
+
+  function replayTapeEventCountFast(gs) {
+    if (typeof window.risqueReplayTapeTotalEventCount === "function") {
+      try {
+        return window.risqueReplayTapeTotalEventCount(gs);
+      } catch (eCnt) {
+        /* ignore */
+      }
+    }
+    return 0;
+  }
+
+  function replaySidecarPersistDelayMs(gs) {
+    var n = replayTapeEventCountFast(gs);
+    if (n > 400) return 2400;
+    if (n > 200) return 1600;
+    if (n > 80) return 900;
+    return 450;
+  }
+
   function scheduleReplayTapeSidecarPersist(gs) {
     __replaySidecarGsRef = gs;
     if (__replaySidecarTimer != null) return;
+    var delay = replaySidecarPersistDelayMs(gs);
     __replaySidecarTimer = setTimeout(function () {
       __replaySidecarTimer = null;
       var g = __replaySidecarGsRef;
-      if (g) replayTapeSidecarPersist(g);
-    }, 450);
+      __replaySidecarGsRef = null;
+      if (!g) return;
+      if (typeof requestIdleCallback === "function") {
+        requestIdleCallback(
+          function () {
+            replayTapeSidecarPersist(g);
+          },
+          { timeout: 3000 }
+        );
+      } else {
+        replayTapeSidecarPersist(g);
+      }
+    }, delay);
   }
+
+  window.risqueReplayScheduleTapeSidecarPersist = scheduleReplayTapeSidecarPersist;
   window.risqueReplayFlushTapeSidecarSchedule = function () {
     if (__replaySidecarTimer != null) {
       clearTimeout(__replaySidecarTimer);
@@ -195,16 +229,71 @@
     };
   }
 
+  var REPLAY_SIDECAR_MAX_BYTES = 2800000;
+  var __replaySidecarSkippedWarned = false;
+
   function replayTapeSidecarPersist(gs) {
     try {
       var payload = replayTapeSidecarSerialize(gs);
       if (!payload) return false;
-      localStorage.setItem(REPLAY_TAPE_SIDECAR_KEY, JSON.stringify(payload));
+      var json = JSON.stringify(payload);
+      if (json.length > REPLAY_SIDECAR_MAX_BYTES) {
+        if (!__replaySidecarSkippedWarned) {
+          __replaySidecarSkippedWarned = true;
+          try {
+            console.warn(
+              "[Replay] Sidecar not written — tape too large for localStorage (" +
+                json.length +
+                " bytes). Replay stays in RAM; use SAVE + REPLAY or finish the game for a disk file."
+            );
+          } catch (eW) {
+            /* ignore */
+          }
+        }
+        return false;
+      }
+      localStorage.setItem(REPLAY_TAPE_SIDECAR_KEY, json);
       return true;
     } catch (eSide) {
+      if (eSide && (eSide.name === "QuotaExceededError" || eSide.code === 22)) {
+        try {
+          localStorage.removeItem(REPLAY_TAPE_SIDECAR_KEY);
+        } catch (eRm) {
+          /* ignore */
+        }
+        if (!__replaySidecarSkippedWarned) {
+          __replaySidecarSkippedWarned = true;
+          try {
+            console.warn(
+              "[Replay] Sidecar quota — removed risqueReplayTapeSidecar. Tape remains in memory this session."
+            );
+          } catch (eW2) {
+            /* ignore */
+          }
+        }
+      }
       return false;
     }
   }
+
+  /** Stuck tab recovery: clear replay sidecar + game logs (host console). Does not reset an in-progress match in RAM. */
+  window.risqueReplayEmergencyClearBrowserStorage = function () {
+    var keys = ["risqueReplayTapeSidecar", "gameLogs", "risqueTransitionLedger"];
+    var i;
+    for (i = 0; i < keys.length; i++) {
+      try {
+        localStorage.removeItem(keys[i]);
+      } catch (eK) {
+        /* ignore */
+      }
+    }
+    try {
+      console.warn("[Replay] Cleared sidecar and log keys. Start a new game from login if the tab is unstable.");
+    } catch (eL) {
+      /* ignore */
+    }
+    return true;
+  };
 
   function replayTapeSidecarRestore(gs) {
     if (!gs || typeof gs !== "object") return false;
@@ -583,6 +672,16 @@
     }
   }
 
+  function shouldDeferReplaySidecarPersist() {
+    try {
+      if (window.__risqueDealRunActive) return true;
+      if (typeof window !== "undefined" && window.risqueDeploy1Active === true) return true;
+    } catch (eDef) {
+      /* ignore */
+    }
+    return false;
+  }
+
   function pushRaw(gs, evt) {
     ensureTape(gs);
     if (!appendReplayEvent(gs, evt)) return;
@@ -601,7 +700,9 @@
       );
     }
     mergeReplayPlayerColors(gs);
-    scheduleReplayTapeSidecarPersist(gs);
+    if (!shouldDeferReplaySidecarPersist()) {
+      scheduleReplayTapeSidecarPersist(gs);
+    }
     if (typeof window.risqueScheduleMirrorPush === "function") {
       window.risqueScheduleMirrorPush();
     } else if (typeof window.risqueMirrorPushGameState === "function") {
@@ -816,7 +917,9 @@
   window.risqueReplayRecordBattle = function (gs) {
     if (!shouldRecord(gs)) return;
     ensureOpeningFrom(gs);
-    pushRaw(gs, { type: "board", segment: "battle", board: snapshotBoard(gs) });
+    var board = snapshotBoard(gs);
+    if (lastBoardJsonFromTape(gs) === boardJsonStable(board)) return;
+    pushRaw(gs, { type: "board", segment: "battle", board: board });
   };
 
   /** Fortify / reinforcement transfers — kept distinct from battle frames so replay can include final moves. */
@@ -927,6 +1030,31 @@
     }
   }
 
+  /** Last board snapshot on the tape (O(buckets) walk, no flatten allocation). */
+  function lastBoardJsonFromTape(gs) {
+    if (!gs) return "";
+    migrateLegacyTapeToByRound(gs);
+    ensureReplayByRound(gs);
+    var keys = Object.keys(gs.risqueReplayByRound || {}).sort(function (a, b) {
+      return Number(a) - Number(b);
+    });
+    var ri, bi, arr, e;
+    for (ri = keys.length - 1; ri >= 0; ri--) {
+      arr = gs.risqueReplayByRound[keys[ri]];
+      if (!Array.isArray(arr) || !arr.length) continue;
+      for (bi = arr.length - 1; bi >= 0; bi--) {
+        e = arr[bi];
+        if (e && e.type === "board" && e.board) {
+          return boardJsonStable(e.board);
+        }
+        if (e && e.type === "init" && e.board) {
+          return boardJsonStable(e.board);
+        }
+      }
+    }
+    return "";
+  }
+
   /**
    * If the live board differs from the last recorded board frame, append a battle snapshot.
    * Catches in-progress attacks / transfers that have not yet been flushed to a round autosave file.
@@ -936,33 +1064,8 @@
     if (gs.risqueAutosaveTier === "battle_stills" || gs.risqueAutosaveTier === "host_ultra") return false;
     if (!shouldRecord(gs)) return false;
     ensureOpeningFrom(gs);
-    var curr = snapshotBoard(gs);
-    var currJ = boardJsonStable(curr);
-    /* Do not call risqueReplayFlattenEvents here — it allocates one giant array of every event in every
-     * round. During blitz / campaign that runs often and cost grows ~linearly with match length (GC + CPU). */
-    migrateLegacyTapeToByRound(gs);
-    ensureReplayByRound(gs);
-    var keys = Object.keys(gs.risqueReplayByRound).sort(function (a, b) {
-      return Number(a) - Number(b);
-    });
-    var lastBoardJ = "";
-    var ri, bi, arr, e;
-    outer: for (ri = keys.length - 1; ri >= 0; ri--) {
-      arr = gs.risqueReplayByRound[keys[ri]];
-      if (!Array.isArray(arr) || !arr.length) continue;
-      for (bi = arr.length - 1; bi >= 0; bi--) {
-        e = arr[bi];
-        if (e && e.type === "board" && e.board) {
-          lastBoardJ = boardJsonStable(e.board);
-          break outer;
-        }
-        if (e && e.type === "init" && e.board) {
-          lastBoardJ = boardJsonStable(e.board);
-          break outer;
-        }
-      }
-    }
-    if (lastBoardJ === currJ) return false;
+    var currJ = boardJsonStable(snapshotBoard(gs));
+    if (lastBoardJsonFromTape(gs) === currJ) return false;
     window.risqueReplayRecordBattle(gs);
     return true;
   };
