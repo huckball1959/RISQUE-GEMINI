@@ -1229,10 +1229,31 @@
               }
             }
             var sessionBoot = risqueTryBuildWaybackBootstrapSessionJson(gsReplay);
-            return (sessionBoot
-              ? Promise.resolve(sessionBoot)
-              : risqueBuildWaybackPackJsonString(gsReplay)
-            ).then(function (json) {
+            var tierWb =
+              gsReplay.risqueAutosaveTier != null ? String(gsReplay.risqueAutosaveTier).trim() : "";
+            var bootChain;
+            if (sessionBoot) {
+              bootChain = Promise.resolve(sessionBoot);
+            } else if (
+              (tierWb === "battle_stills" || tierWb === "host_ultra") &&
+              typeof window.risqueBuildBudgetReplayPackFromDiskStillsAsync === "function"
+            ) {
+              bootChain = window
+                .risqueBuildBudgetReplayPackFromDiskStillsAsync(gsReplay)
+                .then(function (diskPack) {
+                  if (diskPack && diskPack.format === "risque-replay-v1") {
+                    try {
+                      return JSON.stringify(diskPack);
+                    } catch (eDiskJ) {
+                      return null;
+                    }
+                  }
+                  return risqueBuildWaybackPackJsonString(gsReplay);
+                });
+            } else {
+              bootChain = risqueBuildWaybackPackJsonString(gsReplay);
+            }
+            return bootChain.then(function (json) {
               var toStore = json || risqueSnapshotWaybackBootstrapJson(gsReplay);
               if (
                 !toStore &&
@@ -2076,7 +2097,33 @@
     }
   };
 
-  window.risqueMirrorPushGameState = risqueMirrorPushGameStateSync;
+  var __risqueMirrorDebounceTimer = null;
+  var __risqueMirrorLastPushMs = 0;
+  function risqueMirrorPushGameStateEntry() {
+    if (window.risqueDisplayIsPublic) return;
+    if (!window.gameState) return;
+    var tierMir =
+      window.gameState.risqueAutosaveTier != null
+        ? String(window.gameState.risqueAutosaveTier).trim()
+        : "";
+    if (tierMir !== "battle_stills" && tierMir !== "host_ultra") {
+      risqueMirrorPushGameStateSync();
+      return;
+    }
+    var now = Date.now();
+    if (now - __risqueMirrorLastPushMs < 400) {
+      if (__risqueMirrorDebounceTimer) clearTimeout(__risqueMirrorDebounceTimer);
+      __risqueMirrorDebounceTimer = setTimeout(function () {
+        __risqueMirrorDebounceTimer = null;
+        __risqueMirrorLastPushMs = Date.now();
+        risqueMirrorPushGameStateSync();
+      }, 450);
+      return;
+    }
+    __risqueMirrorLastPushMs = now;
+    risqueMirrorPushGameStateSync();
+  }
+  window.risqueMirrorPushGameState = risqueMirrorPushGameStateEntry;
 
   window.risqueScheduleMirrorPush = function () {
     if (window.risqueDisplayIsPublic) return;
@@ -8042,9 +8089,21 @@
   function risqueMaybeHostLongSessionStaminaNotice(gs, completedRound) {
     if (!gs || window.risqueDisplayIsPublic) return;
     var tier = gs.risqueAutosaveTier != null ? String(gs.risqueAutosaveTier).trim() : "";
-    if (tier !== "safe_fun" && tier !== "safe_lean" && tier !== "safe_no_replay") return;
+    if (
+      tier !== "safe_fun" &&
+      tier !== "safe_lean" &&
+      tier !== "safe_no_replay" &&
+      tier !== "battle_stills" &&
+      tier !== "host_ultra"
+    ) {
+      return;
+    }
     var r = Math.max(0, Math.floor(Number(completedRound)) || 0);
-    if (r < 10) return;
+    if (tier === "battle_stills" || tier === "host_ultra") {
+      if (r < 5) return;
+    } else if (r < 10) {
+      return;
+    }
     var milestone = r === 10 || r === 12 || r === 15 || r === 18 || r === 20 || (r >= 25 && r % 5 === 0);
     if (!milestone) return;
     var key = "risqueLongSessionStaminaNotices";
@@ -8063,6 +8122,9 @@
       /* ignore */
     }
     var tierNote = tier === "safe_fun" ? " Tier 1 logs every turn (highest RAM use)." : "";
+    if (tier === "battle_stills" || tier === "host_ultra") {
+      tierNote = " Battle stills spill to disk each round — if sluggish, restart the browser after SAVE.";
+    }
     setBoardCornerMsg(
       "Round " +
         r +
@@ -8083,7 +8145,15 @@
    */
   window.risqueRoundAutosaveOnRoundComplete = function (gs, completedRound) {
     if (!gs || window.risqueDisplayIsPublic) return Promise.resolve();
-    if (gs.risqueAutosaveTier === "manual" || gs.risqueAutosaveTier === "battle_stills") return Promise.resolve();
+    if (gs.risqueAutosaveTier === "battle_stills" || gs.risqueAutosaveTier === "host_ultra") {
+      if (typeof window.risqueCheapReplayFlushRoundToDisk === "function") {
+        return Promise.resolve(window.risqueCheapReplayFlushRoundToDisk(gs)).catch(function () {
+          return false;
+        });
+      }
+      return Promise.resolve();
+    }
+    if (gs.risqueAutosaveTier === "manual") return Promise.resolve();
     if (typeof window.risqueReplayEnsureTapeSessionKey === "function") {
       try {
         window.risqueReplayEnsureTapeSessionKey(gs);
@@ -8149,7 +8219,7 @@
       }
       var flushBs =
         typeof window.risqueCheapReplayFlushToDisk === "function"
-          ? Promise.resolve(window.risqueCheapReplayFlushToDisk(gs)).catch(function () {
+          ? Promise.resolve(window.risqueCheapReplayFlushToDisk(gs, { clearRam: true })).catch(function () {
               return false;
             })
           : Promise.resolve(false);

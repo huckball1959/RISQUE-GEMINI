@@ -169,6 +169,8 @@
   window.risqueSessionDiskScheduleTurnCheckpoint = function (gs, prevPlayerName) {
     if (!gs || window.risqueDisplayIsPublic) return;
     if (gs.risqueAutosaveTier === "manual") return;
+    var tierSched = gs.risqueAutosaveTier != null ? String(gs.risqueAutosaveTier).trim() : "";
+    if (tierSched === "battle_stills" || tierSched === "host_ultra") return;
     var turnOrder = gs.turnOrder;
     if (!Array.isArray(turnOrder) || !turnOrder.length) return;
     try {
@@ -428,6 +430,9 @@
           : "";
     if (liveGsTier === "manual") {
       return Promise.resolve(false);
+    }
+    if (liveGsTier === "battle_stills" || liveGsTier === "host_ultra") {
+      return Promise.resolve(true);
     }
     if (
       typeof window.risqueSessionDiskHasWritableSaveTarget === "function" &&

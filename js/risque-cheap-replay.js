@@ -9,8 +9,8 @@
   var STILL_FORMAT = "risque-replay-still-v1";
   var MANIFEST_FORMAT = "risque-replay-stills-manifest-v1";
   var FILE_PREFIX = "rqwb-still-";
-  /** Safety cap — full board JSON per still must never ride on gameState (JSON.stringify freezes). */
-  var MAX_SESSION_STILLS = 96;
+  /** In-RAM cap per round segment; older frames flush to disk at round end. */
+  var MAX_SESSION_STILLS = 24;
 
   function tierBattleStills(gs) {
     if (!gs || typeof gs !== "object" || window.risqueDisplayIsPublic) return false;
@@ -28,7 +28,8 @@
         sessionKey: "",
         stills: [],
         frameSeq: 0,
-        battleSeq: 0
+        battleSeq: 0,
+        flushedFrameCount: 0
       };
     }
     var st = window.__risqueCheapReplaySessionStore;
@@ -339,9 +340,35 @@
     pushPhaseStill(gs, "battle_outcome", cap, meta);
   };
 
-  window.risqueCheapReplayFlushToDisk = function (gs) {
+  function mergeManifestFrames(existing, incoming) {
+    var out = [];
+    var seen = {};
+    var i;
+    var lists = [existing, incoming];
+    var li;
+    for (li = 0; li < lists.length; li++) {
+      var arr = lists[li];
+      if (!Array.isArray(arr)) continue;
+      for (i = 0; i < arr.length; i++) {
+        var fr = arr[i];
+        if (!fr || !fr.file) continue;
+        var fn = String(fr.file);
+        if (!fn || fn.indexOf("..") >= 0 || seen[fn]) continue;
+        seen[fn] = true;
+        out.push(fr);
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Write rqwb-still-*.json + manifest (merge with existing on disk). Optionally clear in-RAM stills after success.
+   */
+  window.risqueCheapReplayFlushToDisk = function (gs, opts) {
     if (!gs || window.risqueDisplayIsPublic) return Promise.resolve(false);
     if (!tierBattleStills(gs)) return Promise.resolve(false);
+    opts = opts && typeof opts === "object" ? opts : {};
+    var clearRam = opts.clearRam !== false;
     var rows = getStillsRows(gs);
     if (!Array.isArray(rows) || !rows.length) return Promise.resolve(false);
     if (
@@ -353,7 +380,15 @@
     if (typeof window.risqueSessionDiskEnsureReplayDirHandle !== "function") {
       return Promise.resolve(false);
     }
+    var readFn =
+      typeof window.risqueSessionDiskReadTextFile === "function"
+        ? window.risqueSessionDiskReadTextFile
+        : null;
+    var writeFn = window.risqueSessionDiskWriteTextFile;
+    if (typeof writeFn !== "function") return Promise.resolve(false);
+
     ensureTapeKey(gs);
+    var st = getSessionStore(gs);
     var mergedColors = {};
     var ci;
     for (ci = 0; ci < rows.length; ci++) {
@@ -371,70 +406,106 @@
       if (kk) mergedColors[kk] = String(endColors[k]).trim().toLowerCase();
     });
     var sk = gs.risqueReplayTapeSessionKey != null ? String(gs.risqueReplayTapeSessionKey) : "";
-    var manifest = {
-      format: MANIFEST_FORMAT,
-      sessionKey: sk || null,
-      savedAt: Date.now(),
-      playerColors: mergedColors,
-      frames: []
-    };
-    var writeFn = window.risqueSessionDiskWriteTextFile;
-    if (typeof writeFn !== "function") return Promise.resolve(false);
+    var newFrames = [];
 
     return window.risqueSessionDiskEnsureReplayDirHandle(gs).then(function (replayDir) {
       if (!replayDir) return false;
-      var chain = Promise.resolve(true);
-      var ri;
-      for (ri = 0; ri < rows.length; ri++) {
-        (function (row) {
-          var fname = row.fileName ? String(row.fileName) : "";
-          if (!fname || fname.indexOf("..") >= 0) return;
-          var cap = row.caption != null ? String(row.caption) : "";
-          var body = {
-            format: STILL_FORMAT,
-            kind: row.kind,
-            round: row.round,
-            actor: row.actor || "",
-            caption: cap,
-            board: row.board,
-            playerColors:
-              row.playerColorsSnap && typeof row.playerColorsSnap === "object" ? row.playerColorsSnap : {}
-          };
-          var json;
+      var chain = Promise.resolve(null);
+      if (readFn) {
+        chain = readFn(replayDir, "rqwb-stills-manifest.json").then(function (txt) {
+          if (!txt) return null;
           try {
-            json = JSON.stringify(body, null, 2);
-          } catch (eJ) {
-            json = null;
+            var parsed = JSON.parse(txt);
+            if (parsed && parsed.format === MANIFEST_FORMAT && Array.isArray(parsed.frames)) {
+              return parsed;
+            }
+          } catch (eP) {
+            /* ignore */
           }
-          if (!json) return;
-          chain = chain.then(function () {
-            return writeFn(replayDir, fname, json).then(function (ok) {
-              return !!ok;
-            });
-          });
-          manifest.frames.push({
-            file: fname,
-            kind: row.kind,
-            round: row.round,
-            actor: row.actor || "",
-            caption: cap
-          });
-        })(rows[ri]);
+          return null;
+        });
       }
-      return chain.then(function () {
-        var mj;
-        try {
-          mj = JSON.stringify(manifest, null, 2);
-        } catch (eM) {
-          mj = null;
+      return chain.then(function (prevManifest) {
+        var prevFrames = prevManifest && Array.isArray(prevManifest.frames) ? prevManifest.frames : [];
+        if (prevManifest && prevManifest.playerColors && typeof prevManifest.playerColors === "object") {
+          Object.keys(prevManifest.playerColors).forEach(function (pk) {
+            var pkk = String(pk).trim().toLowerCase();
+            if (pkk && prevManifest.playerColors[pk] != null) {
+              mergedColors[pkk] = String(prevManifest.playerColors[pk]).trim().toLowerCase();
+            }
+          });
         }
-        if (!mj) return false;
-        return writeFn(replayDir, "rqwb-stills-manifest.json", mj).then(function (okM) {
-          window.risqueCheapReplayDetachFromGameState(gs);
-          return !!okM;
+        var writeChain = Promise.resolve(true);
+        var ri;
+        for (ri = 0; ri < rows.length; ri++) {
+          (function (row) {
+            var fname = row.fileName ? String(row.fileName) : "";
+            if (!fname || fname.indexOf("..") >= 0) return;
+            var cap = row.caption != null ? String(row.caption) : "";
+            var body = {
+              format: STILL_FORMAT,
+              kind: row.kind,
+              round: row.round,
+              actor: row.actor || "",
+              caption: cap,
+              board: row.board,
+              playerColors:
+                row.playerColorsSnap && typeof row.playerColorsSnap === "object" ? row.playerColorsSnap : {}
+            };
+            var json;
+            try {
+              json = JSON.stringify(body);
+            } catch (eJ) {
+              json = null;
+            }
+            if (!json) return;
+            newFrames.push({
+              file: fname,
+              kind: row.kind,
+              round: row.round,
+              actor: row.actor || "",
+              caption: cap
+            });
+            writeChain = writeChain.then(function () {
+              return writeFn(replayDir, fname, json).then(function (ok) {
+                return !!ok;
+              });
+            });
+          })(rows[ri]);
+        }
+        return writeChain.then(function () {
+          var manifest = {
+            format: MANIFEST_FORMAT,
+            sessionKey: sk || null,
+            savedAt: Date.now(),
+            playerColors: mergedColors,
+            frames: mergeManifestFrames(prevFrames, newFrames)
+          };
+          var mj;
+          try {
+            mj = JSON.stringify(manifest);
+          } catch (eM) {
+            mj = null;
+          }
+          if (!mj) return false;
+          return writeFn(replayDir, "rqwb-stills-manifest.json", mj).then(function (okM) {
+            if (okM) {
+              st.flushedFrameCount = manifest.frames.length;
+              if (clearRam) {
+                st.stills = [];
+              }
+            }
+            window.risqueCheapReplayDetachFromGameState(gs);
+            return !!okM;
+          });
         });
       });
     });
+  };
+
+  /** End of round: spill stills to disk and free RAM (tier 5). */
+  window.risqueCheapReplayFlushRoundToDisk = function (gs) {
+    return window.risqueCheapReplayFlushToDisk(gs, { clearRam: true });
   };
 
   var TAPE_V_BUDGET = 2;
@@ -613,6 +684,7 @@
       replayRound: maxR,
       tapeFormatVersion: TAPE_V_BUDGET,
       risqueReplayLooseTimeline: true,
+      risqueReplayStillsPack: true,
       savedAt: Date.now(),
       round: gs.round,
       phase: gs.phase != null ? String(gs.phase) : "",
@@ -626,5 +698,85 @@
         hasDealFrames: hasDealFrames
       }
     };
+  };
+
+  /** After round-end flush cleared RAM, load rqwb-stills from disk for Wayback / REPLAY. */
+  window.risqueBuildBudgetReplayPackFromDiskStillsAsync = function (gs) {
+    if (!gs || typeof gs !== "object" || !tierBattleStills(gs)) return Promise.resolve(null);
+    var readFn =
+      typeof window.risqueSessionDiskReadTextFile === "function"
+        ? window.risqueSessionDiskReadTextFile
+        : null;
+    if (!readFn) return Promise.resolve(null);
+
+    function loadManifestFromDir(dir) {
+      if (!dir) return Promise.resolve(null);
+      return readFn(dir, "rqwb-stills-manifest.json").then(function (txt) {
+        if (!txt) return null;
+        try {
+          var m = JSON.parse(txt);
+          if (m && m.format === MANIFEST_FORMAT && Array.isArray(m.frames) && m.frames.length) {
+            return { dir: dir, manifest: m };
+          }
+        } catch (eM) {
+          /* ignore */
+        }
+        return null;
+      });
+    }
+
+    var chain = Promise.resolve(null);
+    if (typeof window.risqueSessionDiskEnsureReplayDirHandle === "function") {
+      chain = window.risqueSessionDiskEnsureReplayDirHandle(gs).then(loadManifestFromDir);
+    }
+    return chain.then(function (hit) {
+      if (!hit && typeof window.risqueSessionDiskEnsureGameDirHandle === "function") {
+        return window.risqueSessionDiskEnsureGameDirHandle(gs).then(loadManifestFromDir);
+      }
+      return hit;
+    }).then(function (hit) {
+      if (!hit || !hit.manifest || !hit.manifest.frames.length) return null;
+      var dir = hit.dir;
+      var frames = hit.manifest.frames;
+      var loaded = [];
+      var li = 0;
+      function loadNext() {
+        if (li >= frames.length) return Promise.resolve(loaded);
+        var fr = frames[li];
+        li += 1;
+        var fn = fr && fr.file ? String(fr.file) : "";
+        if (!fn || fn.indexOf("..") >= 0) return loadNext();
+        return readFn(dir, fn).then(function (stillTxt) {
+          if (stillTxt) {
+            try {
+              var body = JSON.parse(stillTxt);
+              if (body && body.board && typeof body.board === "object") {
+                loaded.push({
+                  kind: body.kind || fr.kind,
+                  round: body.round != null ? body.round : fr.round,
+                  actor: body.actor || fr.actor || "",
+                  caption: body.caption != null ? body.caption : fr.caption,
+                  board: body.board,
+                  playerColorsSnap:
+                    body.playerColors && typeof body.playerColors === "object" ? body.playerColors : {}
+                });
+              }
+            } catch (eB) {
+              /* ignore */
+            }
+          }
+          return loadNext();
+        });
+      }
+      return loadNext().then(function (rows) {
+        if (!rows.length) return null;
+        var st = getSessionStore(gs);
+        var prev = st.stills;
+        st.stills = rows;
+        var pack = window.risqueBuildBudgetReplayPackFromCheapStills(gs);
+        st.stills = prev;
+        return pack;
+      });
+    });
   };
 })();
