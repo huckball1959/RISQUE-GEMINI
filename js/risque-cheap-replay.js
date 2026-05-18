@@ -16,6 +16,61 @@
     return t === "battle_stills" || t === "host_ultra";
   }
 
+  /**
+   * Stills live outside gameState — refreshVisuals() assigns window.gameState from a localStorage clone
+   * that omits risqueCheapReplayStills, which was wiping the replay buffer every phase refresh.
+   */
+  function getSessionStore(gs) {
+    if (!window.__risqueCheapReplaySessionStore) {
+      window.__risqueCheapReplaySessionStore = {
+        sessionKey: "",
+        stills: [],
+        frameSeq: 0,
+        battleSeq: 0
+      };
+    }
+    var st = window.__risqueCheapReplaySessionStore;
+    if (gs && typeof gs === "object") {
+      ensureTapeKey(gs);
+      var sk = gs.risqueReplayTapeSessionKey != null ? String(gs.risqueReplayTapeSessionKey) : "";
+      if (sk && st.sessionKey && st.sessionKey !== sk) {
+        st.stills = [];
+        st.frameSeq = 0;
+        st.battleSeq = 0;
+      }
+      if (sk) st.sessionKey = sk;
+    }
+    if (!Array.isArray(st.stills)) st.stills = [];
+    return st;
+  }
+
+  function getStillsRows(gs) {
+    return getSessionStore(gs).stills;
+  }
+
+  window.risqueCheapReplayAttachSessionToGameState = function (gs) {
+    if (!gs || typeof gs !== "object") return;
+    var st = getSessionStore(gs);
+    gs.risqueCheapReplayStills = st.stills;
+    gs.risqueCheapReplayFrameSeq = st.frameSeq;
+    gs.risqueCheapReplayBattleSeq = st.battleSeq;
+  };
+
+  window.risqueCheapReplayMergeGameStateIntoSession = function (gs) {
+    if (!gs || typeof gs !== "object") return;
+    var st = getSessionStore(gs);
+    if (Array.isArray(gs.risqueCheapReplayStills) && gs.risqueCheapReplayStills.length > st.stills.length) {
+      st.stills = gs.risqueCheapReplayStills.slice();
+    }
+    if (typeof gs.risqueCheapReplayFrameSeq === "number" && isFinite(gs.risqueCheapReplayFrameSeq)) {
+      st.frameSeq = Math.max(st.frameSeq, gs.risqueCheapReplayFrameSeq);
+    }
+    if (typeof gs.risqueCheapReplayBattleSeq === "number" && isFinite(gs.risqueCheapReplayBattleSeq)) {
+      st.battleSeq = Math.max(st.battleSeq, gs.risqueCheapReplayBattleSeq);
+    }
+    window.risqueCheapReplayAttachSessionToGameState(gs);
+  };
+
   function snapshotBoard(gs) {
     if (typeof window.risqueReplaySnapshotBoardForStills === "function") {
       return window.risqueReplaySnapshotBoardForStills(gs);
@@ -128,7 +183,7 @@
   }
 
   function lastStillBoardStable(gs) {
-    var rows = gs && Array.isArray(gs.risqueCheapReplayStills) ? gs.risqueCheapReplayStills : [];
+    var rows = getStillsRows(gs);
     if (!rows.length) return "";
     var last = rows[rows.length - 1];
     return last && last.board ? boardJsonStableForBudget(last.board) : "";
@@ -157,15 +212,16 @@
   }
 
   function ensureStillsArray(gs) {
-    if (!Array.isArray(gs.risqueCheapReplayStills)) gs.risqueCheapReplayStills = [];
+    getSessionStore(gs);
+    window.risqueCheapReplayAttachSessionToGameState(gs);
   }
 
   function bumpFrameSeq(gs) {
-    if (typeof gs.risqueCheapReplayFrameSeq !== "number" || !isFinite(gs.risqueCheapReplayFrameSeq)) {
-      gs.risqueCheapReplayFrameSeq = 0;
-    }
-    gs.risqueCheapReplayFrameSeq += 1;
-    return gs.risqueCheapReplayFrameSeq;
+    var st = getSessionStore(gs);
+    if (typeof st.frameSeq !== "number" || !isFinite(st.frameSeq)) st.frameSeq = 0;
+    st.frameSeq += 1;
+    window.risqueCheapReplayAttachSessionToGameState(gs);
+    return st.frameSeq;
   }
 
   function pushPhaseStill(gs, internalKind, captionOpt, metaOpt) {
@@ -184,16 +240,15 @@
     var cap = captionOpt != null && String(captionOpt).trim() !== "" ? String(captionOpt).trim() : defaultCaption(internalKind, gs);
     var slug = String(internalKind || "frame").replace(/[^a-z0-9_\-]/gi, "_");
     var battleSeq = 0;
+    var st = getSessionStore(gs);
     if (internalKind === "battle_outcome") {
-      if (typeof gs.risqueCheapReplayBattleSeq !== "number" || !isFinite(gs.risqueCheapReplayBattleSeq)) {
-        gs.risqueCheapReplayBattleSeq = 0;
-      }
-      gs.risqueCheapReplayBattleSeq += 1;
-      battleSeq = gs.risqueCheapReplayBattleSeq;
+      if (typeof st.battleSeq !== "number" || !isFinite(st.battleSeq)) st.battleSeq = 0;
+      st.battleSeq += 1;
+      battleSeq = st.battleSeq;
       slug = "battle" + battleSeq;
     }
     var fileLeaf = FILE_PREFIX + "r" + round + "-f" + seq + "-" + slug + ".json";
-    gs.risqueCheapReplayStills.push({
+    st.stills.push({
       fileName: fileLeaf,
       kind: internalKind,
       round: round,
@@ -202,9 +257,16 @@
       playerColorsSnap: colorsSnap,
       caption: cap
     });
+    window.risqueCheapReplayAttachSessionToGameState(gs);
   }
 
   window.risqueCheapReplayClear = function (gs) {
+    if (window.__risqueCheapReplaySessionStore) {
+      window.__risqueCheapReplaySessionStore.stills = [];
+      window.__risqueCheapReplaySessionStore.frameSeq = 0;
+      window.__risqueCheapReplaySessionStore.battleSeq = 0;
+      window.__risqueCheapReplaySessionStore.sessionKey = "";
+    }
     if (!gs || typeof gs !== "object") return;
     try {
       delete gs.risqueCheapReplayStills;
@@ -256,7 +318,7 @@
   window.risqueCheapReplayFlushToDisk = function (gs) {
     if (!gs || window.risqueDisplayIsPublic) return Promise.resolve(false);
     if (!tierBattleStills(gs)) return Promise.resolve(false);
-    var rows = gs.risqueCheapReplayStills;
+    var rows = getStillsRows(gs);
     if (!Array.isArray(rows) || !rows.length) return Promise.resolve(false);
     if (
       typeof window.risqueSessionDiskHasWritableSaveTarget === "function" &&
@@ -344,15 +406,8 @@
         }
         if (!mj) return false;
         return writeFn(replayDir, "rqwb-stills-manifest.json", mj).then(function (okM) {
-          if (okM) {
-            try {
-              delete gs.risqueCheapReplayStills;
-              delete gs.risqueCheapReplayFrameSeq;
-              delete gs.risqueCheapReplayBattleSeq;
-            } catch (eClr) {
-              /* ignore */
-            }
-          }
+          /* Keep session stills in RAM for Wayback until a new match (refreshVisuals must not wipe them). */
+          if (okM) window.risqueCheapReplayAttachSessionToGameState(gs);
           return !!okM;
         });
       });
@@ -417,7 +472,8 @@
     var tier = gs.risqueAutosaveTier != null ? String(gs.risqueAutosaveTier).trim() : "";
     if (tier !== "battle_stills" && tier !== "host_ultra") return null;
 
-    var rows = Array.isArray(gs.risqueCheapReplayStills) ? gs.risqueCheapReplayStills.slice() : [];
+    window.risqueCheapReplayAttachSessionToGameState(gs);
+    var rows = getStillsRows(gs).slice();
     var mergedColors = {};
     var ci;
     for (ci = 0; ci < rows.length; ci++) {

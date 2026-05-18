@@ -1020,6 +1020,13 @@
       }
     } catch (eEns) {}
     try {
+      if (typeof window.risqueCheapReplayAttachSessionToGameState === "function") {
+        window.risqueCheapReplayAttachSessionToGameState(live);
+      }
+    } catch (eCrBoot) {
+      /* ignore */
+    }
+    try {
       var tierBoot =
         live.risqueAutosaveTier != null ? String(live.risqueAutosaveTier).trim() : "";
       if (
@@ -1213,6 +1220,13 @@
           .then(function () {
             if (typeof window.risquePersistHostGameState === "function") {
               window.risquePersistHostGameState();
+            }
+            if (typeof window.risqueCheapReplayAttachSessionToGameState === "function") {
+              try {
+                window.risqueCheapReplayAttachSessionToGameState(gsReplay);
+              } catch (eCrWb) {
+                /* ignore */
+              }
             }
             var sessionBoot = risqueTryBuildWaybackBootstrapSessionJson(gsReplay);
             return (sessionBoot
@@ -8098,6 +8112,13 @@
     if (!gs || window.risqueDisplayIsPublic) return Promise.resolve();
     if (gs.risqueAutosaveTier === "battle_stills") {
       if (gs.risqueGameWinAutosaved) return Promise.resolve();
+      if (typeof window.risqueCheapReplayAttachSessionToGameState === "function") {
+        try {
+          window.risqueCheapReplayAttachSessionToGameState(gs);
+        } catch (eCrWin) {
+          /* ignore */
+        }
+      }
       if (typeof window.risqueReplayEnsureTapeSessionKey === "function") {
         try {
           window.risqueReplayEnsureTapeSessionKey(gs);
@@ -9601,7 +9622,25 @@
         /* ignore */
       }
     }
+    if (
+      typeof window.risqueCheapReplayMergeGameStateIntoSession === "function" &&
+      window.gameState &&
+      typeof window.gameState === "object"
+    ) {
+      try {
+        window.risqueCheapReplayMergeGameStateIntoSession(window.gameState);
+      } catch (eCrMerge) {
+        /* ignore */
+      }
+    }
     window.gameState = state;
+    if (typeof window.risqueCheapReplayAttachSessionToGameState === "function") {
+      try {
+        window.risqueCheapReplayAttachSessionToGameState(window.gameState);
+      } catch (eCrAttach) {
+        /* ignore */
+      }
+    }
     risqueEnsurePhaseIncomeEntryVeilFromStorage(state);
     if (
       !window.risqueDisplayIsPublic &&
