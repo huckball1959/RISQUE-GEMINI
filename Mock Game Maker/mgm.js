@@ -1617,6 +1617,13 @@
       delete gs.risquePublicCardplayReport;
       delete gs.risquePublicCardplayHighlightLabels;
     }
+    if (
+      (ph === "cardplay" || ph === "con-cardplay") &&
+      window.gameUtils &&
+      typeof window.gameUtils.clearStaleConquestCardplayFieldsUnlessChain === "function"
+    ) {
+      window.gameUtils.clearStaleConquestCardplayFieldsUnlessChain(gs);
+    }
     if (ph !== "deploy" && ph !== "deploy1" && ph !== "deploy2") {
       delete gs.risquePublicDeployBanner;
       delete gs.risqueDeployMirrorDraft;

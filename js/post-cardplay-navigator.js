@@ -33,14 +33,14 @@
   }
 
   /**
-   * Set on the conquer elimination → runtime cardplay chain so later cardplay mounts still route to
-   * con-income even when legacyNext is only income.html (deploy does not repeat the nested con-income URL).
+   * Con-income only during an active elimination / conquest chain (receivecard sets runtime mode).
+   * Do not route on legacyNext=con-income alone — MGM mocks and con-cardplay shells used to force
+   * con-income with a stale continentsSnapshot, yielding $0 (no troops, continents already in snapshot).
    */
   function shouldUseConquerRuntimeIncome(gs, legacyNext) {
     if (!gs) return false;
-    /* Shell/bookmark explicitly requests continental income — do not require risqueConquestChainActive (JSON saves often omit it). */
-    if (legacyNextEncodesConIncome(legacyNext)) return true;
     if (cardplayIncomeModeIsConquer(gs)) return true;
+    if (gs.risqueConquestChainActive) return true;
     return false;
   }
 
@@ -48,11 +48,8 @@
    * Runtime cardplay (phases/cardplay.js) → income or con-income.
    * Conquer campaign chain (e.g. post-elimination) uses conquer-mode income (con-income) only, not full territory income.
    *
-   * IMPORTANT: Do not route on `risqueConquestChainActive` alone. That flag is set for many conquest
-   * events but only cleared in a few code paths; it can stay true for the whole session. Using it alone
-   * forced every post-cardplay turn through con-income (books + new continents only, no territory bonus),
-   * often totaling 0 and breaking the game for all players. Conquer-mode income applies when the URL
-   * encodes con-income OR `risqueRuntimeCardplayIncomeMode === "conquer"` (legacy: `"continental"`; receivecard elimination).
+   * Conquer-mode income applies when `risqueRuntimeCardplayIncomeMode` is conquer/continental (set by
+   * receivecard elimination) or `risqueConquestChainActive` is true mid-chain — not from URL/phase alone.
    *
    * @param {object} gs
    * @param {string|null|undefined} legacyNext - mountOpts.legacyNext

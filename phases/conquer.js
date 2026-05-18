@@ -160,6 +160,12 @@
     gs.risqueConquestElimReceiveCard = true;
     gs.phase = "receivecard";
     gs.risqueConquestChainActive = true;
+    if (
+      window.gameUtils &&
+      typeof window.gameUtils.syncConquestPendingNewContinents === "function"
+    ) {
+      window.gameUtils.syncConquestPendingNewContinents(gs);
+    }
 
     var rh = document.getElementById("runtime-hud-root");
     if (rh) rh.classList.remove("runtime-hud-root--conquest-celebration");

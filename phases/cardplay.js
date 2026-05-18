@@ -990,13 +990,11 @@
             "game.html?phase=con-income" +
             (innerLegacy ? "&legacyNext=" + encodeURIComponent(innerLegacy) : "");
         } else {
-          _nextLegacy = nav.href;
+          _nextLegacy = nav.href || "game.html?phase=con-income";
         }
       } else {
-        _nextLegacy =
-          !_raw || _raw === "income.html" || _raw === "in-come.html"
-            ? "game.html?phase=income"
-            : _raw;
+        /* Navigator chose standard income — never keep a stale con-income URL from con-cardplay mount opts. */
+        _nextLegacy = nav.href || "game.html?phase=income";
       }
       logToStorage("Navigating after cardplay", { next: _nextLegacy, resolvedPhase: nav.phase });
       var wait = delayMs != null ? Number(delayMs) : 0;
@@ -1441,6 +1439,12 @@
       }
       normalizeAllPlayerCards(gameState);
       normalizeCardplayRecapForCurrentPlayer(gameState);
+      if (
+        window.gameUtils &&
+        typeof window.gameUtils.clearStaleConquestCardplayFieldsUnlessChain === "function"
+      ) {
+        window.gameUtils.clearStaleConquestCardplayFieldsUnlessChain(gameState);
+      }
       gameState.risqueCardplaySuppressPublicSpectator = true;
       const currentPlayer = gameState.players.find(p => p.name === gameState.currentPlayer);
       if (!currentPlayer) {

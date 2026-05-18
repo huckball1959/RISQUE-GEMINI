@@ -7198,6 +7198,12 @@
     if (!Array.isArray(s.risqueLuckySessionRoster)) {
       s.risqueLuckySessionRoster = [];
     }
+    if (
+      window.gameUtils &&
+      typeof window.gameUtils.clearStaleConquestCardplayFieldsUnlessChain === "function"
+    ) {
+      window.gameUtils.clearStaleConquestCardplayFieldsUnlessChain(s);
+    }
     /* Old saves: rebuild roster from turn order, current players, and ledger (eliminated names). */
     if (!s.risqueLuckySessionRoster.length) {
       var seenRo = {};
@@ -9948,12 +9954,29 @@
     }
   }
 
-  /** Continental conquer (?phase=con-cardplay): runtime cardplay HUD + default next phase con-income. */
+  /** Continental conquer (?phase=con-cardplay): runtime cardplay HUD; income target follows active chain. */
   function risqueBootMountRuntimeCardplayContinental() {
+    var gsBoot = window.gameState;
+    if (
+      gsBoot &&
+      window.gameUtils &&
+      typeof window.gameUtils.clearStaleConquestCardplayFieldsUnlessChain === "function"
+    ) {
+      window.gameUtils.clearStaleConquestCardplayFieldsUnlessChain(gsBoot);
+    }
+    var defaultCardplayNext = "game.html?phase=income";
+    if (
+      gsBoot &&
+      window.gameUtils &&
+      typeof window.gameUtils.isRisqueConquestIncomeChain === "function" &&
+      window.gameUtils.isRisqueConquestIncomeChain(gsBoot)
+    ) {
+      defaultCardplayNext = "game.html?phase=con-income";
+    }
     var ln =
       legacyNext != null && String(legacyNext).trim() !== ""
         ? legacyNext
-        : "game.html?phase=con-income";
+        : defaultCardplayNext;
     risqueMountCardplayShellSameDocument({ cardplayLegacyNext: ln });
     if (!window.risqueDisplayIsPublic && typeof window.risqueMirrorPushGameState === "function") {
       window.risqueMirrorPushGameState();

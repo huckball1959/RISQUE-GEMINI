@@ -880,6 +880,12 @@ function checkPlayerElimination(defenderPlayer) {
     }
   });
   window.gameState.defeatedPlayer = defenderPlayer.name;
+  if (
+    window.gameUtils &&
+    typeof window.gameUtils.syncConquestPendingNewContinents === 'function'
+  ) {
+    window.gameUtils.syncConquestPendingNewContinents(window.gameState);
+  }
   const turnOrderBeforeElimination = Array.isArray(window.gameState.turnOrder)
     ? window.gameState.turnOrder.slice()
     : [];
@@ -2199,6 +2205,12 @@ function applyBattleRoundAfterRoll(snap, opts) {
     attacker.troops = attackerTerritory.troops;
     opponent.territories = opponent.territories.filter(t => t.name !== defenderTerritory.name);
     player.territories.push({ name: defenderTerritory.name, troops: minTroopsToTransfer });
+    if (
+      window.gameUtils &&
+      typeof window.gameUtils.recordConquestTerritoryCapture === 'function'
+    ) {
+      window.gameUtils.recordConquestTerritoryCapture(window.gameState, defenderTerritory.name);
+    }
     window.gameState.cardEarnedViaAttack = true;
     requestAnimationFrame(function () {
       if (typeof window.risqueSyncHostAttackCardEarnedIndicator === 'function') {

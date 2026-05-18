@@ -112,6 +112,15 @@
   function mount(host, opts) {
     opts = opts || {};
     var conquerIncome = !!opts.conquerIncome;
+    if (
+      conquerIncome &&
+      window.gameState &&
+      window.gameUtils &&
+      typeof window.gameUtils.isRisqueConquestIncomeChain === "function" &&
+      !window.gameUtils.isRisqueConquestIncomeChain(window.gameState)
+    ) {
+      conquerIncome = false;
+    }
     var onLog = opts.onLog;
     // Default next step: stay inside JS runtime.
     var legacyNext = opts.legacyNext != null ? opts.legacyNext : "game.html?phase=deploy&kind=turn";
@@ -303,20 +312,10 @@
             gameState.risqueConquestAttackEntryContinents = baselineRestore.slice();
           }
         }
-        if (typeof window.gameUtils.computePendingNewContinentsForConquest === "function") {
-          var recomputed = window.gameUtils.computePendingNewContinentsForConquest(gameState);
-          var prevPending = gameState.pendingNewContinents;
-          if (recomputed && recomputed.length > 0) {
-            gameState.pendingNewContinents = recomputed;
-          } else if (Array.isArray(prevPending) && prevPending.length > 0) {
-            gameState.pendingNewContinents = prevPending;
-          } else {
-            gameState.pendingNewContinents = recomputed || [];
-          }
+        if (typeof window.gameUtils.syncConquestPendingNewContinents === "function") {
+          window.gameUtils.syncConquestPendingNewContinents(gameState);
+        } else if (typeof window.gameUtils.computePendingNewContinentsForConquest === "function") {
           gameState.pendingNewContinents = window.gameUtils.computePendingNewContinentsForConquest(gameState);
-          if (typeof window.gameUtils.filterConIncomePendingContinentsArray === "function") {
-            gameState.pendingNewContinents = window.gameUtils.filterConIncomePendingContinentsArray(gameState);
-          }
         }
         if (!Object.keys(gameState.continentsSnapshot || {}).length) {
           logToStorage("WARNING: continentsSnapshot empty (con-income)", {
@@ -344,6 +343,7 @@
           turnStartKeys: Object.keys(gameState.risqueTurnStartContinentsSnapshot || {}),
           ownedContinents: ownedContinents,
           pendingNew: pendingNew,
+          capturedThisAttack: gameState.risqueConquestTerritoriesCapturedThisAttack || [],
           collectionCounts: gameState.continentCollectionCounts,
           baselineLocked: !!gameState.risqueConquestIncomeBaselineLocked,
           attackEntryContinents: attackEntryContinents,
@@ -354,14 +354,6 @@
         var continentRowsForMirror = [];
         var cdn = window.gameUtils && window.gameUtils.continentDisplayNames;
         pendingNew.forEach(function (key) {
-          if (
-            window.gameUtils &&
-            typeof window.gameUtils.shouldSkipConIncomeBaselineContinent === "function" &&
-            window.gameUtils.shouldSkipConIncomeBaselineContinent(gameState, key)
-          ) {
-            logToStorage("Con-income skip pending continent (baseline)", { key: key });
-            return;
-          }
           var collectionCount = gameState.continentCollectionCounts[key] || 0;
           var bonus =
             typeof window.gameUtils.getContinentConquestIncomeValue === "function"
@@ -381,81 +373,10 @@
         var territoryCount = (currentPlayer.territories || []).length;
         var territoryBonusRow = 0;
         var skipTerritoryRow = true;
-        var continentBonusHeld = 0;
-        var useStandardHeldSupplement =
-          pendingNew.length === 0 &&
-          territoryCount > 0 &&
-          window.gameUtils &&
-          typeof window.gameUtils.getPlayerContinents === "function" &&
-          typeof window.gameUtils.getNextContinentValue === "function";
-        var skipHeldContinentFromPreAttackBaseline = true;
 
-        if (useStandardHeldSupplement) {
-          territoryBonusRow = Math.max(Math.floor(territoryCount / 3), 3);
-          skipTerritoryRow = false;
-          var heldDisplay = window.gameUtils.getPlayerContinents(currentPlayer);
-          var hi;
-          for (hi = 0; hi < heldDisplay.length; hi++) {
-            var cNm = heldDisplay[hi];
-            var cKey = null;
-            var dn = window.gameUtils.continentDisplayNames;
-            if (dn && typeof dn === "object") {
-              for (var k0 in dn) {
-                if (!Object.prototype.hasOwnProperty.call(dn, k0)) continue;
-                if (dn[k0] === cNm) {
-                  cKey = k0;
-                  break;
-                }
-              }
-            }
-            if (cKey == null) continue;
-            if (
-              skipHeldContinentFromPreAttackBaseline &&
-              window.gameUtils &&
-              typeof window.gameUtils.shouldSkipConIncomeBaselineContinent === "function" &&
-              window.gameUtils.shouldSkipConIncomeBaselineContinent(gameState, cKey)
-            ) {
-              continue;
-            }
-            var cVal = window.gameUtils.getNextContinentValue(cKey, gameState.continentCollectionCounts[cKey] || 0);
-            if (cVal > 0) {
-              continentBonusHeld += cVal;
-              var dispH = (cdn && cdn[cKey]) || String(cKey);
-              var nmH = String(dispH)
-                .replace("South America", "S. America")
-                .replace("North America", "N. America");
-              continentRowsForMirror.push({ name: nmH, bonus: cVal });
-            }
-          }
-          logToStorage("Con-income standard territory + held continents", {
-            territoryCount: territoryCount,
-            territoryBonusRow: territoryBonusRow,
-            continentBonusHeld: continentBonusHeld,
-            bookBonus: bookBonus,
-            continentBonusNew: continentBonus
-          });
-        }
+        var total = bookBonus + continentBonus;
 
-        var total = bookBonus + continentBonus + territoryBonusRow + continentBonusHeld;
-
-        if (!useStandardHeldSupplement && total < 1 && territoryCount > 0) {
-          territoryBonusRow = Math.max(Math.floor(territoryCount / 3), 3);
-          total = bookBonus + continentBonus + territoryBonusRow;
-          skipTerritoryRow = false;
-          logToStorage("Con-income territory fallback applied", {
-            territoryCount: territoryCount,
-            territoryBonusRow: territoryBonusRow,
-            bookBonus: bookBonus,
-            continentBonus: continentBonus
-          });
-        }
-
-        var continentSubhead =
-          pendingNew.length > 0
-            ? "New continents"
-            : useStandardHeldSupplement && continentRowsForMirror.length > 0
-              ? "Continents held"
-              : "New continents";
+        var continentSubhead = pendingNew.length > 0 ? "New continents" : "No new continents";
         gameState.risquePublicIncomeBreakdown = {
           skipTerritoryRow: skipTerritoryRow,
           territoryCount: territoryCount,
@@ -654,19 +575,9 @@
           logToStorage("Con-income HUD path mounted", { total: total });
         } else {
           var scale = window.innerWidth / 1920;
-          var trTerritoryLegacy =
-            !skipTerritoryRow && territoryBonusRow > 0
-              ? "<tr><td>TERRITORY</td><td>TERRITORY COUNT: " +
-                territoryCount +
-                "</td><td>BONUS: " +
-                territoryBonusRow +
-                "</td></tr>"
-              : "";
-          var continentValLegacy = continentBonus + continentBonusHeld;
+          var trTerritoryLegacy = "";
+          var continentValLegacy = continentBonus;
           var continentDetailsLegacy = continentDetails;
-          if (useStandardHeldSupplement && continentBonusHeld > 0 && continentDetails === "NONE") {
-            continentDetailsLegacy = "Continents held (standard scaling)";
-          }
           var incomeContent =
             '<div class="income-player-name" style="color: ' +
             playerColor +

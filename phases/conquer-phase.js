@@ -86,13 +86,21 @@
       return p.name === gs.currentPlayer;
     });
     if (!currentPlayer) return;
-    var snapshot = gs.continentsSnapshot || {};
-    var snapshotOwned = Object.keys(snapshot);
-    var currentOwned = computeOwnedContinents(currentPlayer);
-    var newContinents = currentOwned.filter(function (cont) {
-      return snapshotOwned.indexOf(cont) === -1;
-    });
-    gs.pendingNewContinents = newContinents;
+    var newContinents = [];
+    if (
+      window.gameUtils &&
+      typeof window.gameUtils.syncConquestPendingNewContinents === "function"
+    ) {
+      newContinents = window.gameUtils.syncConquestPendingNewContinents(gs);
+    } else {
+      var snapshot = gs.continentsSnapshot || {};
+      var snapshotOwned = Object.keys(snapshot);
+      var currentOwned = computeOwnedContinents(currentPlayer);
+      newContinents = currentOwned.filter(function (cont) {
+        return snapshotOwned.indexOf(cont) === -1;
+      });
+      gs.pendingNewContinents = newContinents;
+    }
     gs.phase = "conquer";
     delete gs.risquePublicEliminationBanner;
     delete gs.risqueControlVoice;
