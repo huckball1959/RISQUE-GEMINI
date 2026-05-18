@@ -167,6 +167,11 @@
   }
 
   function scheduleReplayTapeSidecarPersist(gs) {
+    if (gs && typeof gs === "object") {
+      var tierSc =
+        gs.risqueAutosaveTier != null ? String(gs.risqueAutosaveTier).trim() : "";
+      if (tierSc === "battle_stills" || tierSc === "host_ultra") return;
+    }
     __replaySidecarGsRef = gs;
     if (__replaySidecarTimer != null) return;
     var delay = replaySidecarPersistDelayMs(gs);

@@ -9,6 +9,8 @@
   var STILL_FORMAT = "risque-replay-still-v1";
   var MANIFEST_FORMAT = "risque-replay-stills-manifest-v1";
   var FILE_PREFIX = "rqwb-still-";
+  /** Safety cap — full board JSON per still must never ride on gameState (JSON.stringify freezes). */
+  var MAX_SESSION_STILLS = 96;
 
   function tierBattleStills(gs) {
     if (!gs || typeof gs !== "object" || window.risqueDisplayIsPublic) return false;
@@ -48,28 +50,50 @@
     return getSessionStore(gs).stills;
   }
 
-  window.risqueCheapReplayAttachSessionToGameState = function (gs) {
+  /** Stills must stay off gameState — many phases JSON.stringify(gameState) without replay strip keys. */
+  window.risqueCheapReplayDetachFromGameState = function (gs) {
     if (!gs || typeof gs !== "object") return;
-    var st = getSessionStore(gs);
-    gs.risqueCheapReplayStills = st.stills;
-    gs.risqueCheapReplayFrameSeq = st.frameSeq;
-    gs.risqueCheapReplayBattleSeq = st.battleSeq;
+    try {
+      delete gs.risqueCheapReplayStills;
+      delete gs.risqueCheapReplayFrameSeq;
+      delete gs.risqueCheapReplayBattleSeq;
+    } catch (eD) {
+      /* ignore */
+    }
   };
 
-  window.risqueCheapReplayMergeGameStateIntoSession = function (gs) {
-    if (!gs || typeof gs !== "object") return;
-    var st = getSessionStore(gs);
-    if (Array.isArray(gs.risqueCheapReplayStills) && gs.risqueCheapReplayStills.length > st.stills.length) {
-      st.stills = gs.risqueCheapReplayStills.slice();
+  function pruneSessionStillsIfNeeded(st) {
+    if (!st || !Array.isArray(st.stills) || st.stills.length <= MAX_SESSION_STILLS) return;
+    var dealIdx = -1;
+    var i;
+    for (i = 0; i < st.stills.length; i++) {
+      if (st.stills[i] && st.stills[i].kind === "deal") {
+        dealIdx = i;
+        break;
+      }
     }
-    if (typeof gs.risqueCheapReplayFrameSeq === "number" && isFinite(gs.risqueCheapReplayFrameSeq)) {
-      st.frameSeq = Math.max(st.frameSeq, gs.risqueCheapReplayFrameSeq);
+    var drop = st.stills.length - MAX_SESSION_STILLS;
+    var trimmed = st.stills.slice(drop);
+    if (dealIdx >= 0) {
+      var dealRow = st.stills[dealIdx];
+      var hasDeal = false;
+      for (i = 0; i < trimmed.length; i++) {
+        if (trimmed[i] && trimmed[i].kind === "deal") {
+          hasDeal = true;
+          break;
+        }
+      }
+      if (!hasDeal) trimmed.unshift(dealRow);
     }
-    if (typeof gs.risqueCheapReplayBattleSeq === "number" && isFinite(gs.risqueCheapReplayBattleSeq)) {
-      st.battleSeq = Math.max(st.battleSeq, gs.risqueCheapReplayBattleSeq);
+    st.stills = trimmed;
+    try {
+      console.warn(
+        "[Replay] Battle stills trimmed to " + MAX_SESSION_STILLS + " frames (oldest dropped) to keep the tab responsive."
+      );
+    } catch (eW) {
+      /* ignore */
     }
-    window.risqueCheapReplayAttachSessionToGameState(gs);
-  };
+  }
 
   function snapshotBoard(gs) {
     if (typeof window.risqueReplaySnapshotBoardForStills === "function") {
@@ -213,14 +237,13 @@
 
   function ensureStillsArray(gs) {
     getSessionStore(gs);
-    window.risqueCheapReplayAttachSessionToGameState(gs);
+    window.risqueCheapReplayDetachFromGameState(gs);
   }
 
   function bumpFrameSeq(gs) {
     var st = getSessionStore(gs);
     if (typeof st.frameSeq !== "number" || !isFinite(st.frameSeq)) st.frameSeq = 0;
     st.frameSeq += 1;
-    window.risqueCheapReplayAttachSessionToGameState(gs);
     return st.frameSeq;
   }
 
@@ -257,7 +280,8 @@
       playerColorsSnap: colorsSnap,
       caption: cap
     });
-    window.risqueCheapReplayAttachSessionToGameState(gs);
+    pruneSessionStillsIfNeeded(st);
+    window.risqueCheapReplayDetachFromGameState(gs);
   }
 
   window.risqueCheapReplayClear = function (gs) {
@@ -406,8 +430,7 @@
         }
         if (!mj) return false;
         return writeFn(replayDir, "rqwb-stills-manifest.json", mj).then(function (okM) {
-          /* Keep session stills in RAM for Wayback until a new match (refreshVisuals must not wipe them). */
-          if (okM) window.risqueCheapReplayAttachSessionToGameState(gs);
+          window.risqueCheapReplayDetachFromGameState(gs);
           return !!okM;
         });
       });
@@ -472,7 +495,7 @@
     var tier = gs.risqueAutosaveTier != null ? String(gs.risqueAutosaveTier).trim() : "";
     if (tier !== "battle_stills" && tier !== "host_ultra") return null;
 
-    window.risqueCheapReplayAttachSessionToGameState(gs);
+    window.risqueCheapReplayDetachFromGameState(gs);
     var rows = getStillsRows(gs).slice();
     var mergedColors = {};
     var ci;

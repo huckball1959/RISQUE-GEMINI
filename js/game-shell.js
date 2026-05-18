@@ -1020,8 +1020,8 @@
       }
     } catch (eEns) {}
     try {
-      if (typeof window.risqueCheapReplayAttachSessionToGameState === "function") {
-        window.risqueCheapReplayAttachSessionToGameState(live);
+      if (typeof window.risqueCheapReplayDetachFromGameState === "function") {
+        window.risqueCheapReplayDetachFromGameState(live);
       }
     } catch (eCrBoot) {
       /* ignore */
@@ -1221,9 +1221,9 @@
             if (typeof window.risquePersistHostGameState === "function") {
               window.risquePersistHostGameState();
             }
-            if (typeof window.risqueCheapReplayAttachSessionToGameState === "function") {
+            if (typeof window.risqueCheapReplayDetachFromGameState === "function") {
               try {
-                window.risqueCheapReplayAttachSessionToGameState(gsReplay);
+                window.risqueCheapReplayDetachFromGameState(gsReplay);
               } catch (eCrWb) {
                 /* ignore */
               }
@@ -1863,8 +1863,17 @@
     try {
       var gs = window.gameState;
       /* Ephemeral TV-only fields (e.g. name roulette) must not bloat host saves */
+      var tierMir =
+        gs && gs.risqueAutosaveTier != null ? String(gs.risqueAutosaveTier).trim() : "";
+      if (typeof window.risqueCheapReplayDetachFromGameState === "function") {
+        try {
+          window.risqueCheapReplayDetachFromGameState(gs);
+        } catch (eCrMir) {
+          /* ignore */
+        }
+      }
       var forDisk;
-      if (risqueLocalStorageReplayLiteEnabled()) {
+      if (risqueLocalStorageReplayLiteEnabled() || tierMir === "battle_stills" || tierMir === "host_ultra") {
         risqueMaybeLogLsReplayLiteOnce();
         forDisk =
           typeof window.risqueCloneGameStateOmitReplayKeys === "function"
@@ -7754,23 +7763,35 @@
 
   function saveState(state) {
     function write() {
-      /* Debounce replay sidecar — sync stringify of a long tape blocked the UI (round 3+ campaign). */
-      try {
-        if (typeof window.risqueReplayScheduleTapeSidecarPersist === "function") {
-          window.risqueReplayScheduleTapeSidecarPersist(state);
-        } else if (typeof window.risqueReplayPersistTapeSidecar === "function") {
-          window.risqueReplayPersistTapeSidecar(state);
+      if (typeof window.risqueCheapReplayDetachFromGameState === "function") {
+        try {
+          window.risqueCheapReplayDetachFromGameState(state);
+        } catch (eCrSv) {
+          /* ignore */
         }
-      } catch (eReplaySidecar) {
-        /* ignore */
+      }
+      var tierSave =
+        state && state.risqueAutosaveTier != null ? String(state.risqueAutosaveTier).trim() : "";
+      var skipSidecar = tierSave === "battle_stills" || tierSave === "host_ultra";
+      /* Debounce replay sidecar — sync stringify of a long tape blocked the UI (round 3+ campaign). */
+      if (!skipSidecar) {
+        try {
+          if (typeof window.risqueReplayScheduleTapeSidecarPersist === "function") {
+            window.risqueReplayScheduleTapeSidecarPersist(state);
+          } else if (typeof window.risqueReplayPersistTapeSidecar === "function") {
+            window.risqueReplayPersistTapeSidecar(state);
+          }
+        } catch (eReplaySidecar) {
+          /* ignore */
+        }
       }
       var payload = state;
       if (
-        risqueLocalStorageReplayLiteEnabled() &&
+        (skipSidecar || risqueLocalStorageReplayLiteEnabled()) &&
         typeof window.risqueStripReplayFromGameStateClone === "function"
       ) {
         payload = window.risqueStripReplayFromGameStateClone(state);
-        risqueMaybeLogLsReplayLiteOnce();
+        if (!skipSidecar) risqueMaybeLogLsReplayLiteOnce();
       }
       var diskJson =
         typeof window.risqueJsonStringifyGameStateForStorage === "function"
@@ -8112,9 +8133,9 @@
     if (!gs || window.risqueDisplayIsPublic) return Promise.resolve();
     if (gs.risqueAutosaveTier === "battle_stills") {
       if (gs.risqueGameWinAutosaved) return Promise.resolve();
-      if (typeof window.risqueCheapReplayAttachSessionToGameState === "function") {
+      if (typeof window.risqueCheapReplayDetachFromGameState === "function") {
         try {
-          window.risqueCheapReplayAttachSessionToGameState(gs);
+          window.risqueCheapReplayDetachFromGameState(gs);
         } catch (eCrWin) {
           /* ignore */
         }
@@ -9622,22 +9643,19 @@
         /* ignore */
       }
     }
-    if (
-      typeof window.risqueCheapReplayMergeGameStateIntoSession === "function" &&
-      window.gameState &&
-      typeof window.gameState === "object"
-    ) {
+    if (typeof window.risqueCheapReplayDetachFromGameState === "function") {
       try {
-        window.risqueCheapReplayMergeGameStateIntoSession(window.gameState);
-      } catch (eCrMerge) {
+        if (window.gameState) window.risqueCheapReplayDetachFromGameState(window.gameState);
+        if (state) window.risqueCheapReplayDetachFromGameState(state);
+      } catch (eCrDet) {
         /* ignore */
       }
     }
     window.gameState = state;
-    if (typeof window.risqueCheapReplayAttachSessionToGameState === "function") {
+    if (typeof window.risqueCheapReplayDetachFromGameState === "function" && window.gameState) {
       try {
-        window.risqueCheapReplayAttachSessionToGameState(window.gameState);
-      } catch (eCrAttach) {
+        window.risqueCheapReplayDetachFromGameState(window.gameState);
+      } catch (eCrDet2) {
         /* ignore */
       }
     }
